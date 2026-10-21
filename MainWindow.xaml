@@ -199,6 +199,7 @@
                         </InfoBar>
                         <TextBlock x:Name="SettingsStatusText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                         <Button x:Name="ExitButton" Content="Exit Media Center Updater" HorizontalAlignment="Left" Click="Exit_Click" />
+                        <TextBlock x:Name="AppVersionText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" IsTextSelectionEnabled="True" />
                     </StackPanel>
                 </ScrollViewer>
             </PivotItem>

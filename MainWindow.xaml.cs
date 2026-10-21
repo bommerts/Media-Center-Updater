@@ -32,6 +32,11 @@ public sealed partial class MainWindow : Window
     private bool _dialogOpen;
     private bool _retrievingKeys;
 
+    // Comes from <Version> in the project file.
+    public static string AppVersion { get; } =
+        System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
+            typeof(MainWindow).Assembly)?.InformationalVersion ?? "unknown";
+
     public MainWindow(AppSettings settings, SettingsStore store, UpdateCoordinator coordinator)
     {
         _settings = settings;
@@ -40,6 +45,7 @@ public sealed partial class MainWindow : Window
         InitializeComponent();
         AppWindow.Resize(new SizeInt32(1180, 900));
         Title = "Media Center Updater";
+        AppVersionText.Text = "Version " + AppVersion;
         AppWindow.Closing += Window_Closing;
         Closed += Window_Closed;
 
