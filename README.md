@@ -4,6 +4,17 @@ A Windows tray app that keeps the software on a home media server up to date. It
 
 It is a native Windows app built with WinUI 3 (Windows App SDK 2.4.0) and .NET 10. The published build is self-contained, so the target PC does not need .NET or the Windows App SDK installed.
 
+## Why these apps, and why Windows only?
+
+I built this for my own media server, so it supports the apps I run today (Plex Media Server, SABnzbd, Radarr, Sonarr and Pulsarr) on the operating system I run them on, Windows.
+
+That's where it started, not where it has to stop. I'm open to adding:
+
+- **More apps**, such as Jellyfin, Emby, Lidarr, Prowlarr, Readarr, Bazarr, Overseerr or qBittorrent.
+- **More operating systems.** The app is Windows only today, but I'd welcome support for macOS and Linux.
+
+If you'd like to help, contributions are welcome. Open an issue to suggest an app or platform, or to talk through an idea before you start, or send a pull request.
+
 ## Requirements
 
 - Windows 10 (version 2004 or later) or Windows 11, x64.
