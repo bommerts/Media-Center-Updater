@@ -2,7 +2,7 @@
 
 <h1 align="center">Media Center Updater</h1>
 
-<p align="center"><strong>Current version: 0.3.0</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
+<p align="center"><strong>Current version: 0.3.1</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
 
 A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
 
