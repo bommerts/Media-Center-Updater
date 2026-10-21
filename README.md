@@ -2,7 +2,7 @@
 
 # Media Center Updater
 
-**Current version: 0.2.4** · [Download the installer](https://github.com/bommerts/Media-Center-Updater/releases/latest)
+**Current version: 0.2.5** · [Download the installer](https://github.com/bommerts/Media-Center-Updater/releases/latest)
 <br clear="left">
 
 
