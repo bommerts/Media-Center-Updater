@@ -1,6 +1,17 @@
 # Media Center Updater
 
-A Windows tray app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
+A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
+
+## Features
+
+- Checks all supported apps at once, or installs their updates in one click.
+- Scheduled updates, every few hours or at a set time each day.
+- Per-app switches to monitor an app, and to let it update automatically.
+- Verifies every download (checksums and signatures) before installing, and never reboots Windows.
+- Finds the Radarr and Sonarr API keys on the PC for you, and stores keys encrypted.
+- Can start when you sign in to Windows, without an administrator prompt each time.
+- Minimizes to the notification area (system tray) so it can keep running in the background.
+- Light, dark, or system theme.
 
 It is a native Windows app built with WinUI 3 (Windows App SDK 2.4.0) and .NET 10. The published build is self-contained, so the target PC does not need .NET or the Windows App SDK installed.
 
@@ -13,7 +24,7 @@ That's where it started, not where it has to stop. I'm open to adding:
 - **More apps**, such as Jellyfin, Emby, Lidarr, Prowlarr, Readarr, Bazarr, Overseerr or qBittorrent.
 - **More operating systems.** The app is Windows only today, but I'd welcome support for macOS and Linux.
 
-If you'd like to help, contributions are welcome. Open an issue to suggest an app or platform, or to talk through an idea before you start, or send a pull request.
+If you'd like to help, contributions are welcome under the project's [MIT License](LICENSE). Open an issue to suggest an app or platform, or to talk through an idea before you start, or send a pull request.
 
 ## Requirements
 
@@ -125,6 +136,10 @@ Settings, recent activity, installer logs, and crash reports are stored in `%LOC
 Build with Visual Studio 2026 or the .NET 10 SDK. Run `Publish.ps1` to run the test suite and publish the self-contained x64 app to the `App` folder. `bin`, `obj`, and `App` are build output and aren't checked in.
 
 The tests cover schedule recovery, daylight-saving time, non-overlapping runs, per-program switches, encrypted settings, failure isolation, URL credentials, version comparisons, and Radarr/Sonarr container detection. They use simulated providers and HTTP responses and never install real updates.
+
+## License
+
+Released under the [MIT License](LICENSE).
 
 ## Sources
 
