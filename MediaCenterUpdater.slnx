@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/Tests/">
+    <Project Path="Tests/MediaCenterUpdater.Tests.csproj" />
+  </Folder>
+  <Project Path="MediaCenterUpdater.csproj" />
+</Solution>

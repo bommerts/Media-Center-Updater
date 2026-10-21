@@ -1,0 +1,35 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows10.0.26100.0</TargetFramework>
+    <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
+    <RootNamespace>MediaCenterUpdater</RootNamespace>
+    <AssemblyName>MediaCenterUpdater</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <Platforms>x64</Platforms>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <UseWinUI>true</UseWinUI>
+    <WindowsPackageType>None</WindowsPackageType>
+    <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
+    <SelfContained>true</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableMsixTooling>false</EnableMsixTooling>
+  </PropertyGroup>
+  <ItemGroup>
+    <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="10.0.12" />
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" RuntimeFrameworkVersion="10.0.12" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <Compile Remove="Tests\**\*.cs" />
+    <Page Remove="Tests\**\*.xaml" />
+  </ItemGroup>
+  <Target Name="IncludeUnpackagedResources" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)$(AssemblyName).pri">
+        <RelativePath>resources.pri</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+</Project>

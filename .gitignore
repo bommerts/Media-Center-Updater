@@ -1,0 +1,7 @@
+bin/
+obj/
+App/
+.vs/
+*.user
+TestResults/
+MediaCenterUpdater.zip
