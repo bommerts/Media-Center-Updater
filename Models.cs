@@ -30,6 +30,10 @@ public sealed class AppSettings
     public int DailyMinute { get; set; }
     public DateTimeOffset? LastScheduledRun { get; set; }
     public DateTimeOffset? NextRun { get; set; }
+    // Updates to Media Center Updater itself. Only used by copies installed with the setup program.
+    public bool AppUpdateCheck { get; set; } = true;
+    public bool AppUpdateInstall { get; set; }
+    public DateTimeOffset? LastAppUpdateCheck { get; set; }
     public List<ProgramSettings> Programs { get; set; } = new()
     {
         new() { Id = ApplicationId.Plex },

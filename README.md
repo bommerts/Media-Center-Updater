@@ -71,7 +71,14 @@ The updater only runs while someone is signed in to the media server. If your se
 
 ### Updating the updater
 
-Download the newer installer from the [releases page](https://github.com/bommerts/Media-Center-Updater/releases) and run it. It closes the running updater, installs over the old version, and keeps your settings. The version you have is shown in the title bar and at the bottom of **Settings**.
+If you installed with the setup program, the updater can update itself. In **Settings > Auto-update**:
+
+- **Check for new versions** (on by default) checks GitHub when the app starts and once a day, and tells you when a new version is out. Choose **Install version …** to install it.
+- **Install new versions automatically** (off by default) installs new versions without asking. It waits until no app updates are running, then closes, installs, and reopens the updater where it was (window or notification area).
+
+Every download is checked against the SHA-256 checksum published with the GitHub release before it runs. Copies you built yourself can check for new versions, but install them by hand.
+
+To update by hand, download the newer installer from the [releases page](https://github.com/bommerts/Media-Center-Updater/releases) and run it. It closes the running updater, installs over the old version, and keeps your settings. The version you have is shown in the title bar and at the bottom of **Settings**.
 
 ### Uninstalling
 

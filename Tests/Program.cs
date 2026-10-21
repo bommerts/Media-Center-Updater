@@ -15,6 +15,24 @@ if (args.Contains("--inspect-local"))
     return;
 }
 
+if (args.Length == 2 && args[0] == "--inspect-self-update")
+{
+    // Finds and downloads the real latest release as if this were the given older version.
+    // It verifies the checksum but never runs the setup program.
+    var updater = new SelfUpdater();
+    using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(5));
+    var update = await updater.CheckAsync(args[1], timeout.Token);
+    Console.WriteLine(update is null ? "Up to date." : $"Found {update.Version} at {update.DownloadUrl}");
+    if (update is not null)
+    {
+        var folder = Path.Combine(Path.GetTempPath(), "MediaCenterUpdater.Tests", Guid.NewGuid().ToString("N"));
+        var file = await updater.DownloadAsync(update, folder, timeout.Token);
+        Console.WriteLine($"Downloaded and verified {new FileInfo(file).Length} bytes.");
+        Directory.Delete(folder, true);
+    }
+    return;
+}
+
 var directory = Path.Combine(Path.GetTempPath(), "MediaCenterUpdater.Tests", Guid.NewGuid().ToString("N"));
 Directory.CreateDirectory(directory);
 var count = 0;
@@ -148,6 +166,28 @@ connection.ServerUrl = "http://user:secret@localhost:7878";
 before = handler.Paths.Count;
 result = await actualProvider.CheckAsync(connection, CancellationToken.None);
 Assert(result.State == UpdateState.Error && handler.Paths.Count == before && !result.Message.Contains("secret"), "Embedded URL credentials are rejected before sending requests");
+
+var appDefaults = new AppSettings();
+Assert(appDefaults.AppUpdateCheck && !appDefaults.AppUpdateInstall, "App update checks are on by default, automatic self-install requires opt-in");
+System.Text.Json.JsonElement Release(string tag, string name, string digest, string url, bool prerelease = false) =>
+    System.Text.Json.JsonDocument.Parse(System.Text.Json.JsonSerializer.Serialize(new
+    {
+        tag_name = tag, prerelease, draft = false,
+        assets = new[] { new { name, digest, browser_download_url = url } }
+    })).RootElement;
+var goodDigest = "sha256:" + new string('a', 64);
+var goodUrl = "https://github.com/bommerts/Media-Center-Updater/releases/download/v0.3.0/MediaCenterUpdater-0.3.0-Setup.exe";
+var found = SelfUpdater.ParseRelease(Release("v0.3.0", "MediaCenterUpdater-0.3.0-Setup.exe", goodDigest, goodUrl), "0.2.4");
+Assert(found is { Version: "0.3.0" } && found.Sha256 == new string('A', 64) && found.DownloadUrl.AbsoluteUri == goodUrl, "A newer app release is found with its setup program and checksum");
+Assert(SelfUpdater.ParseRelease(Release("v0.2.4", "MediaCenterUpdater-0.2.4-Setup.exe", goodDigest, goodUrl), "0.2.4") is null, "The same app version is not offered as an update");
+Assert(SelfUpdater.ParseRelease(Release("v0.2.3", "MediaCenterUpdater-0.2.3-Setup.exe", goodDigest, goodUrl), "0.2.4") is null, "An older app release cannot trigger a downgrade");
+bool Rejects(Action action) { try { action(); return false; } catch (InvalidOperationException) { return true; } }
+Assert(Rejects(() => SelfUpdater.ParseRelease(Release("v0.3.0", "MediaCenterUpdater-0.3.0-Setup.exe", goodDigest, goodUrl, prerelease: true), "0.2.4")), "Pre-releases are never installed");
+Assert(Rejects(() => SelfUpdater.ParseRelease(Release("v0.3.0", "MediaCenterUpdater-0.3.0-Setup.exe", "", goodUrl), "0.2.4")), "A release without a SHA-256 checksum is not installed");
+Assert(Rejects(() => SelfUpdater.ParseRelease(Release("v0.3.0", "Other-0.3.0.exe", goodDigest, goodUrl), "0.2.4")), "A release without the expected setup program is not installed");
+Assert(Rejects(() => SelfUpdater.ParseRelease(Release("v0.3.0", "MediaCenterUpdater-0.3.0-Setup.exe", goodDigest, "https://example.invalid/MediaCenterUpdater-0.3.0-Setup.exe"), "0.2.4")), "A setup program from another site is not installed");
+Assert(!SelfUpdater.IsAllowedDownload(new Uri("https://github.com/someone-else/Media-Center-Updater/releases/download/v1/MediaCenterUpdater-1.0.0-Setup.exe")), "A setup program from another GitHub repository is not installed");
+
 Console.WriteLine($"All {count} assertions passed. No real updates were installed.");
 Directory.Delete(directory, true);
 

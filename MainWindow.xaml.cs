@@ -31,6 +31,12 @@ public sealed partial class MainWindow : Window
     private bool _exiting;
     private bool _dialogOpen;
     private bool _retrievingKeys;
+    private readonly SelfUpdater _selfUpdater = new();
+    private SelfUpdateInfo? _appUpdate;
+    private bool _appUpdateBusy;
+    private bool _appUpdateCheckedThisSession;
+    // First automatic check waits a minute after start so it doesn't compete with startup work.
+    private DateTimeOffset _nextAppUpdateAttempt = DateTimeOffset.Now.AddMinutes(1);
 
     // Comes from <Version> in the project file.
     public static string AppVersion { get; } =
@@ -76,6 +82,11 @@ public sealed partial class MainWindow : Window
         DailyTimePicker.Time = new TimeSpan(settings.DailyHour, settings.DailyMinute, 0);
         TrayToggle.IsOn = settings.MinimizeToTray;
         StartMinimizedBox.IsChecked = settings.StartMinimized;
+        AppUpdateCheckToggle.IsOn = settings.AppUpdateCheck;
+        AppUpdateInstallToggle.IsOn = settings.AppUpdateInstall;
+        AppUpdateUnavailableBar.IsOpen = !SelfUpdater.IsInstalledCopy;
+        AppUpdateStatusText.Text = $"You have version {AppVersion}." + (settings.LastAppUpdateCheck is { } lastCheck
+            ? " Last checked " + FormatTime(lastCheck) + "." : "");
         ProgramSettings radarr = Program(ApplicationId.Radarr);
         ProgramSettings sonarr = Program(ApplicationId.Sonarr);
         RadarrUrlBox.Text = radarr.ServerUrl;
@@ -133,6 +144,8 @@ public sealed partial class MainWindow : Window
 
     private async void ScheduleTimer_Tick(DispatcherQueueTimer sender, object args)
     {
+        if (_exiting) return;
+        await EvaluateAppUpdateAsync();
         if (_exiting || _retrievingKeys || _coordinator.IsBusy || !_settings.ScheduleEnabled) return;
         try
         {
@@ -169,7 +182,13 @@ public sealed partial class MainWindow : Window
 
     private async Task RunAsync(bool install)
     {
-        if (_coordinator.IsBusy || _retrievingKeys || _exiting || !SaveSettings(saveConnections: true)) return;
+        if (_coordinator.IsBusy || _retrievingKeys || _exiting) return;
+        if (_appUpdateBusy)
+        {
+            ShowSummary("Please wait", "Media Center Updater is checking for or installing a new version of itself. Try again in a moment.", InfoBarSeverity.Informational);
+            return;
+        }
+        if (!SaveSettings(saveConnections: true)) return;
         if (!_settings.Programs.Any(p => p.Enabled))
         {
             ShowSummary("Choose an application", "Turn on Monitor for at least one app before checking for updates.", InfoBarSeverity.Warning);
@@ -202,6 +221,7 @@ public sealed partial class MainWindow : Window
         StartupBox.IsEnabled = !busy;
         foreach (ProgramRow program in _programs) program.IsEditable = !busy;
         RefreshScheduleText();
+        RefreshAppUpdateControls();
     }
 
     private void ProgramPreferenceChanged()
@@ -265,6 +285,8 @@ public sealed partial class MainWindow : Window
         _settings.DailyMinute = DailyTimePicker.Time.Minutes;
         _settings.MinimizeToTray = TrayToggle.IsOn;
         _settings.StartMinimized = StartMinimizedBox.IsChecked == true;
+        _settings.AppUpdateCheck = AppUpdateCheckToggle.IsOn;
+        _settings.AppUpdateInstall = AppUpdateInstallToggle.IsOn;
         if (saveConnections)
         {
             Program(ApplicationId.Radarr).ServerUrl = RadarrUrlBox.Text.Trim();
@@ -302,6 +324,157 @@ public sealed partial class MainWindow : Window
         int count = _programs.Count(p => p.Enabled);
         MonitoredText.Text = $"{count} of {_programs.Count} monitored";
         RefreshScheduleText();
+        RefreshAppUpdateControls();
+    }
+
+    private static string FormatTime(DateTimeOffset time) => time.ToLocalTime().ToString("MMM d 'at' h:mm tt");
+
+    private void AppUpdatePreference_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        SaveSettings();
+        RefreshAppUpdateControls();
+        // Turning on automatic install acts on an update that was already found.
+        if (_appUpdate is not null && _settings.AppUpdateCheck && _settings.AppUpdateInstall) _nextAppUpdateAttempt = DateTimeOffset.Now;
+    }
+
+    private void RefreshAppUpdateControls()
+    {
+        bool installed = SelfUpdater.IsInstalledCopy;
+        AppUpdateCheckToggle.IsEnabled = installed;
+        AppUpdateInstallToggle.IsEnabled = installed && AppUpdateCheckToggle.IsOn;
+        AppUpdateCheckButton.IsEnabled = !_appUpdateBusy;
+        AppUpdateRing.IsActive = _appUpdateBusy;
+        AppUpdateRing.Visibility = _appUpdateBusy ? Visibility.Visible : Visibility.Collapsed;
+        AppUpdateInstallButton.Visibility = _appUpdate is null ? Visibility.Collapsed : Visibility.Visible;
+        AppUpdateInstallButton.Content = !installed ? "Open download page" : _appUpdate is { } update ? $"Install version {update.Version}" : "Install update";
+        AppUpdateInstallButton.IsEnabled = !_appUpdateBusy && (!installed || (!_coordinator.IsBusy && !_retrievingKeys));
+    }
+
+    private async void AppUpdateCheck_Click(object sender, RoutedEventArgs e) => await CheckAppUpdateAsync(automatic: false);
+    private async void AppUpdateInstall_Click(object sender, RoutedEventArgs e) => await InstallAppUpdateAsync(automatic: false);
+
+    /// <summary>Called by the 30-second timer. Checks once per app start and then daily, and installs when allowed.</summary>
+    private async Task EvaluateAppUpdateAsync()
+    {
+        if (_appUpdateBusy || _exiting || !SelfUpdater.IsInstalledCopy || !_settings.AppUpdateCheck) return;
+        if (DateTimeOffset.Now < _nextAppUpdateAttempt) return;
+        if (_appUpdate is null)
+        {
+            if (_appUpdateCheckedThisSession && _settings.LastAppUpdateCheck is { } last && DateTimeOffset.Now - last < TimeSpan.FromHours(24)) return;
+            await CheckAppUpdateAsync(automatic: true);
+        }
+        if (_appUpdate is not null && _settings.AppUpdateInstall && !_coordinator.IsBusy && !_retrievingKeys && !_dialogOpen &&
+            DateTimeOffset.Now >= _nextAppUpdateAttempt)
+            await InstallAppUpdateAsync(automatic: true);
+    }
+
+    private async Task CheckAppUpdateAsync(bool automatic)
+    {
+        if (_appUpdateBusy || _exiting) return;
+        _appUpdateBusy = true;
+        RefreshAppUpdateControls();
+        AppUpdateStatusText.Text = "Checking for a new version...";
+        try
+        {
+            using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(1));
+            SelfUpdateInfo? update = await _selfUpdater.CheckAsync(AppVersion, timeout.Token);
+            if (_exiting) return;
+            _appUpdateCheckedThisSession = true;
+            _settings.LastAppUpdateCheck = DateTimeOffset.Now;
+            try { _store.Save(_settings); } catch (Exception) { }
+            bool isNew = update is not null && update.Version != _appUpdate?.Version;
+            _appUpdate = update;
+            if (update is null)
+            {
+                AppUpdateStatusText.Text = $"You have the latest version ({AppVersion}). Checked {FormatTime(DateTimeOffset.Now)}.";
+                return;
+            }
+            AppUpdateStatusText.Text = $"Version {update.Version} is available. You have {AppVersion}.";
+            if (isNew)
+            {
+                LogAppActivity($"Version {update.Version} is available.");
+                bool willInstall = automatic && _settings.AppUpdateInstall && SelfUpdater.IsInstalledCopy;
+                if (!willInstall)
+                    ShowSummary("A new version of Media Center Updater is available",
+                        SelfUpdater.IsInstalledCopy
+                            ? $"Version {update.Version} is ready. Open Settings and choose Install version {update.Version} under Auto-update."
+                            : $"Version {update.Version} is ready. Open Settings and choose Open download page under Auto-update.",
+                        InfoBarSeverity.Informational);
+            }
+        }
+        catch (Exception ex)
+        {
+            if (_exiting) return;
+            _appUpdateCheckedThisSession = true;
+            _nextAppUpdateAttempt = DateTimeOffset.Now.AddHours(1);
+            string reason = ex is OperationCanceledException ? "GitHub did not respond in time." : ex.Message;
+            AppUpdateStatusText.Text = $"Could not check for a new version. {reason}" + (automatic ? " It will try again in an hour." : "");
+        }
+        finally
+        {
+            _appUpdateBusy = false;
+            if (!_exiting) RefreshAppUpdateControls();
+        }
+    }
+
+    private async Task InstallAppUpdateAsync(bool automatic)
+    {
+        if (_appUpdate is not { } update || _appUpdateBusy || _exiting) return;
+        if (!SelfUpdater.IsInstalledCopy)
+        {
+            try { Process.Start(new ProcessStartInfo(SelfUpdater.ReleasesPage.AbsoluteUri) { UseShellExecute = true })?.Dispose(); }
+            catch (Exception ex) { _ = ShowNoticeAsync("The download page could not be opened", ex.Message); }
+            return;
+        }
+        if (_coordinator.IsBusy || _retrievingKeys)
+        {
+            AppUpdateStatusText.Text = "Wait for the current check or installation to finish, then try again.";
+            return;
+        }
+        if (!SaveSettings(saveConnections: true)) return;
+        _appUpdateBusy = true;
+        RefreshAppUpdateControls();
+        AppUpdateStatusText.Text = $"Downloading version {update.Version}...";
+        try
+        {
+            using var timeout = new System.Threading.CancellationTokenSource(TimeSpan.FromMinutes(15));
+            string installer = await _selfUpdater.DownloadAsync(update, _store.DataDirectory, timeout.Token);
+            if (_exiting) return;
+            if (_coordinator.IsBusy)
+            {
+                // An app update started during the download. Try again once it has finished.
+                _nextAppUpdateAttempt = DateTimeOffset.Now.AddMinutes(5);
+                AppUpdateStatusText.Text = $"Version {update.Version} is downloaded. It will install after the current app updates finish.";
+                return;
+            }
+            LogAppActivity($"Installing version {update.Version}. Media Center Updater will close and reopen.");
+            SelfUpdater.StartInstaller(installer, update.Sha256, reopenInTray: _integration?.IsHiddenToTray == true);
+            _exiting = true;
+            _integration?.Dispose();
+            Close();
+        }
+        catch (Exception ex)
+        {
+            if (_exiting) return;
+            _nextAppUpdateAttempt = DateTimeOffset.Now.AddHours(1);
+            string reason = ex is OperationCanceledException ? "The download took too long." : ex.Message;
+            AppUpdateStatusText.Text = $"Version {update.Version} could not be installed. {reason}" + (automatic ? " It will try again in an hour." : "");
+            LogAppActivity($"Version {update.Version} could not be installed. {reason}", isError: true);
+            ShowSummary("Media Center Updater could not update itself", reason, InfoBarSeverity.Warning);
+        }
+        finally
+        {
+            _appUpdateBusy = false;
+            if (!_exiting) RefreshAppUpdateControls();
+        }
+    }
+
+    private void LogAppActivity(string message, bool isError = false)
+    {
+        var entry = new ActivityEntry(DateTimeOffset.Now, "Media Center Updater", message, isError);
+        try { _store.Log(entry); } catch (Exception) { }
+        Coordinator_Activity(entry);
     }
 
     private void RefreshScheduleText()

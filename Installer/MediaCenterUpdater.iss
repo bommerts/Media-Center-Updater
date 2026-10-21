@@ -54,7 +54,17 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExe}"; Tasks: deskto
 [Run]
 ; shellexec lets Windows show the app's own administrator prompt.
 Filename: "{app}\{#MyAppExe}"; Description: "{cm:LaunchProgram,{#MyAppName}}"; Flags: nowait postinstall skipifsilent shellexec
+; The app's own auto-update runs this installer silently with /RELAUNCH=tray or /RELAUNCH=window,
+; then exits. Reopen it the same way once the new version is in place.
+Filename: "{app}\{#MyAppExe}"; Parameters: "--tray"; Flags: nowait; Check: ShouldRelaunch('tray')
+Filename: "{app}\{#MyAppExe}"; Flags: nowait; Check: ShouldRelaunch('window')
 
 [UninstallRun]
 ; Remove the "Start with Windows" task so it doesn't point at a deleted program.
 Filename: "{app}\{#MyAppExe}"; Parameters: "--remove-startup"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveStartupTask"
+
+[Code]
+function ShouldRelaunch(Mode: String): Boolean;
+begin
+  Result := WizardSilent and (CompareText(ExpandConstant('{param:RELAUNCH|}'), Mode) = 0);
+end;

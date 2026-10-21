@@ -72,6 +72,8 @@ public sealed class WindowsIntegration : IDisposable
         }
     }
 
+    public bool IsHiddenToTray => _hiddenToTray;
+
     public void ShowWindow() => OnUiThread(() =>
     {
         _changingVisibility = true;

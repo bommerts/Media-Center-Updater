@@ -160,6 +160,36 @@
 
                         <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="22">
                             <StackPanel Spacing="16">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="Auto-update" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Keep Media Center Updater itself up to date with new versions from GitHub. Each download is checked against its published checksum before it runs." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <InfoBar x:Name="AppUpdateUnavailableBar" IsOpen="False" IsClosable="False" Severity="Informational" Title="Only for installed copies" Message="Auto-update works when Media Center Updater was installed with its setup program (MediaCenterUpdater-Setup.exe). This copy can still check, then you can download the new version yourself." />
+                                <Grid ColumnSpacing="36">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Spacing="4">
+                                        <ToggleSwitch x:Name="AppUpdateCheckToggle" Header="Check for new versions" Toggled="AppUpdatePreference_Changed" AutomationProperties.Name="Check for new versions of Media Center Updater" />
+                                        <TextBlock Text="Checks once a day while the app is running, and tells you when a new version is ready." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="4">
+                                        <ToggleSwitch x:Name="AppUpdateInstallToggle" Header="Install new versions automatically" Toggled="AppUpdatePreference_Changed" AutomationProperties.Name="Install new versions of Media Center Updater automatically" />
+                                        <TextBlock Text="Waits until no app updates are running, then installs and reopens the updater. Your settings are kept." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="12">
+                                    <Button x:Name="AppUpdateCheckButton" Content="Check now" Click="AppUpdateCheck_Click" />
+                                    <Button x:Name="AppUpdateInstallButton" Content="Install update" Style="{StaticResource AccentButtonStyle}" Visibility="Collapsed" Click="AppUpdateInstall_Click" />
+                                    <ProgressRing x:Name="AppUpdateRing" Width="22" Height="22" IsActive="False" Visibility="Collapsed" AutomationProperties.Name="Working on Media Center Updater update" />
+                                </StackPanel>
+                                <TextBlock x:Name="AppUpdateStatusText" TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="22">
+                            <StackPanel Spacing="16">
                                 <TextBlock Text="Radarr &amp; Sonarr connections" FontSize="17" FontWeight="SemiBold" />
                                 <TextBlock Text="An API key is like a password that lets this updater check Radarr or Sonarr and ask it to install updates. We look for both keys on this PC when the updater opens and fill in any empty boxes. You usually do not need to enter them yourself." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                 <TextBlock Text="If a key is missing or has changed, choose Find API keys again. Found keys are filled in and saved securely for your Windows account. If we cannot find a key, you can copy it from that app's Settings → General → Security page. Plex, SABnzbd, and Pulsarr do not need a key here." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
