@@ -473,8 +473,19 @@ public sealed partial class MainWindow : Window
                 AppUpdateStatusText.Text = $"Version {update.Version} is downloaded. It will install after the current app updates finish.";
                 return;
             }
+            bool inTray = _integration?.IsHiddenToTray == true;
             LogAppActivity($"Installing version {update.Version}. Media Center Updater will close and reopen.");
-            SelfUpdater.StartInstaller(installer, update.Sha256, reopenInTray: _integration?.IsHiddenToTray == true);
+            if (!inTray)
+            {
+                // Give the user a moment to read what is about to happen before the window closes.
+                AppUpdateStatusText.Text = $"Installing version {update.Version}. Media Center Updater will close, show the setup progress, then reopen.";
+                ShowSummary($"Installing version {update.Version}",
+                    "Media Center Updater will close in a moment. A setup window shows the progress, and the app reopens when it is done.",
+                    InfoBarSeverity.Informational);
+                await Task.Delay(TimeSpan.FromSeconds(2));
+                if (_exiting) return;
+            }
+            SelfUpdater.StartInstaller(installer, update.Sha256, reopenInTray: inTray);
             _exiting = true;
             _integration?.Dispose();
             Close();
