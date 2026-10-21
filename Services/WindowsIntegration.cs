@@ -42,7 +42,10 @@ public sealed class WindowsIntegration : IDisposable
         _appWindow = window.AppWindow;
         _dispatcher = window.DispatcherQueue;
         _minimizeToTray = minimizeToTray;
-        _icon = (Icon)SystemIcons.Application.Clone();
+        // Load the size Windows uses for tray icons at the current display scale.
+        try { _icon = new Icon(MainWindow.AssetPath("AppIcon.ico"), Forms.SystemInformation.SmallIconSize); }
+        catch (Exception exception) when (exception is IOException or ArgumentException or UnauthorizedAccessException)
+        { _icon = (Icon)SystemIcons.Application.Clone(); }
         _trayMenu = new Forms.ContextMenuStrip();
         _trayMenu.Items.Add("Open Media Center Updater", null, (_, _) => ShowWindow());
         _trayMenu.Items.Add("Check for updates now", null, (_, _) => OnUiThread(checkNow));

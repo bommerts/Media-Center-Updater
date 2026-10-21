@@ -1,6 +1,11 @@
+<img src="Assets/Logo.svg" alt="" width="96" align="left">
+
 # Media Center Updater
 
-**Current version: 0.2.4**
+**Current version: 0.2.4** · [Download the installer](https://github.com/bommerts/Media-Center-Updater/releases/latest)
+<br clear="left">
+
+
 
 A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
 
@@ -38,39 +43,25 @@ If you'd like to help, contributions are welcome under the project's [MIT Licens
 
 The updater must run **on the same Windows PC as your media apps**. It updates the copies installed on that PC, so it can't update a server elsewhere on your network. In these steps, "media server" means that PC.
 
-There's no installer yet. You build the app once, then copy the finished folder to your media server. You can build on the media server itself or on any other Windows PC.
-
-### Step 1: Build the app
-
-1. On a Windows PC, install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (x64).
-2. Get the source code. Either:
-   - on this GitHub page, click **Code > Download ZIP** and extract it, or
-   - run `git clone https://github.com/bommerts/Media-Center-Updater.git`.
-3. Open PowerShell in the extracted folder and run:
-
-   ```powershell
-   powershell -ExecutionPolicy Bypass -File .\Publish.ps1
-   ```
-
-   This runs the tests (they never install real updates) and creates an `App` folder containing the finished app. The first build downloads packages and can take a few minutes.
-
-### Step 2: Copy it to your media server
-
-1. On the media server, create a permanent folder for the app, for example `C:\Program Files\Media Center Updater`.
-2. Copy **everything inside** the `App` folder into it, not just `MediaCenterUpdater.exe`. The app needs the DLLs and `resources.pri` next to it.
-
-Pick the folder carefully. If you turn on starting with Windows, Windows remembers this location. If you move the folder later, turn **Start with Windows when I sign in** off and on again from the new location.
-
-### Step 3: First run
+### Step 1: Install
 
 1. Sign in to the media server as the **Windows account that runs your media apps**. If Plex or SABnzbd run as a normal app rather than a Windows service, they run under that one user's account. The updater refuses to restart an app that belongs to a different account. Your Windows password is never stored.
-2. Double-click `MediaCenterUpdater.exe` and approve the Windows administrator prompt. The app asks for this every time it starts, because most installers need administrator rights.
+2. Download `MediaCenterUpdater-<version>-Setup.exe` from the [latest release](https://github.com/bommerts/Media-Center-Updater/releases/latest).
+3. Run it and follow the steps. It installs to `C:\Program Files\Media Center Updater` and adds a Start menu shortcut.
+
+The installer isn't code-signed yet, so Windows SmartScreen may say it "protected your PC". Click **More info**, then **Run anyway**.
+
+Prefer to build it yourself? See [Building](#building).
+
+### Step 2: First run
+
+1. Open **Media Center Updater** from the Start menu (or let the installer start it) and approve the Windows administrator prompt. The app asks for this every time it starts, because most installers need administrator rights.
 3. Turn off **Monitor** for any of the five programs you don't have installed.
 4. **Radarr and Sonarr:** check their URLs. The defaults are `http://localhost:7878` and `http://localhost:8989`. If you changed the port, added a URL base (such as `/radarr`) or use HTTPS, enter the address you use in your browser on the media server, then click **Save connections**. The app usually finds the API keys by itself. If a key box stays empty, copy the key from that app's **Settings > General > Security**.
 5. **Pulsarr:** read the installation note. If it says your setup needs attention, reinstall Pulsarr with its official Windows installer and select the Windows service option.
 6. Click **Check for updates**. This only checks and installs nothing, so it's a safe way to confirm each program is detected.
 
-### Step 4: Keep it running
+### Step 3: Keep it running
 
 1. Turn on **Start with Windows when I sign in**. The updater then starts in the notification area each time you sign in, without an administrator prompt.
 2. Optional: turn on **Scheduled updates** and pick how often to check, or a daily time. Choose a time when nobody is watching or downloading, because updates briefly restart the apps.
@@ -80,14 +71,11 @@ The updater only runs while someone is signed in to the media server. If your se
 
 ### Updating the updater
 
-Build a new copy (step 1), exit the updater from its tray menu, copy the new `App` contents over the old ones, then start it again. Your settings are kept.
+Download the newer installer from the [releases page](https://github.com/bommerts/Media-Center-Updater/releases) and run it. It closes the running updater, installs over the old version, and keeps your settings. The version you have is shown in the title bar and at the bottom of **Settings**.
 
 ### Uninstalling
 
-1. Turn off **Start with Windows when I sign in**. This removes its Task Scheduler task.
-2. Exit the updater from its tray menu.
-3. Delete the app's folder.
-4. Optionally delete `%LOCALAPPDATA%\MediaCenterUpdater`, which holds its settings, saved keys and logs.
+Uninstall **Media Center Updater** from Windows **Settings > Apps > Installed apps**. This also removes its "Start with Windows" task. Your settings, saved keys and logs stay in `%LOCALAPPDATA%\MediaCenterUpdater`; delete that folder too if you want them gone.
 
 ## Use
 
@@ -135,7 +123,15 @@ Settings, recent activity, installer logs, and crash reports are stored in `%LOC
 
 ## Building
 
-Build with Visual Studio 2026 or the .NET 10 SDK. Run `Publish.ps1` to run the test suite and publish the self-contained x64 app to the `App` folder. `bin`, `obj`, and `App` are build output and aren't checked in.
+You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (x64), or Visual Studio 2026. Then, in PowerShell in the repo folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Publish.ps1
+```
+
+This runs the tests and publishes the self-contained x64 app to the `App` folder. To also build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and add `-Installer`; the installer lands in `Installer\Output`. The version number comes from `<Version>` in `MediaCenterUpdater.csproj`. `bin`, `obj`, `App` and `Installer\Output` are build output and aren't checked in.
+
+If you run the `App` folder without the installer, copy the whole folder, not just the EXE: the app needs the DLLs and `resources.pri` beside it.
 
 The tests cover schedule recovery, daylight-saving time, non-overlapping runs, per-program switches, encrypted settings, failure isolation, URL credentials, version comparisons, and Radarr/Sonarr container detection. They use simulated providers and HTTP responses and never install real updates.
 

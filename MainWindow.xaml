@@ -16,9 +16,15 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <StackPanel Orientation="Horizontal" Spacing="16" VerticalAlignment="Center">
-                <Border Background="#306BEA" Width="52" Height="52" CornerRadius="14">
-                    <FontIcon Glyph="&#xE895;" FontSize="25" Foreground="White" />
-                </Border>
+                <!-- App logo, drawn as shapes on a 100x100 grid (same design as Assets\Logo.svg). -->
+                <Viewbox Width="52" Height="52" VerticalAlignment="Center">
+                    <Canvas Width="100" Height="100">
+                        <Rectangle Width="100" Height="100" RadiusX="22" RadiusY="22" Fill="#1E293B" />
+                        <Polygon Points="30,24 30,72 70,48" Fill="#F59E0B" Stroke="#F59E0B" StrokeThickness="8" StrokeLineJoin="Round" />
+                        <Ellipse Canvas.Left="54" Canvas.Top="54" Width="40" Height="40" Fill="#22C55E" Stroke="#1E293B" StrokeThickness="5" />
+                        <Path Data="M74,84 V64 M66,72 L74,64 L82,72" Stroke="White" StrokeThickness="5" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round" />
+                    </Canvas>
+                </Viewbox>
                 <StackPanel Spacing="3">
                     <TextBlock Text="Media Center Updater" FontSize="26" FontWeight="SemiBold" />
                     <TextBlock Text="Keep your media services up to date." Foreground="{ThemeResource TextFillColorSecondaryBrush}" />

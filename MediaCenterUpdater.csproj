@@ -9,6 +9,7 @@
     <RootNamespace>MediaCenterUpdater</RootNamespace>
     <AssemblyName>MediaCenterUpdater</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\AppIcon.ico</ApplicationIcon>
     <Platforms>x64</Platforms>
     <PlatformTarget>x64</PlatformTarget>
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
@@ -24,6 +25,7 @@
     <FrameworkReference Update="Microsoft.NETCore.App" RuntimeFrameworkVersion="10.0.12" />
     <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" RuntimeFrameworkVersion="10.0.12" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
+    <Content Include="Assets\AppIcon.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <Compile Remove="Tests\**\*.cs" />
     <Page Remove="Tests\**\*.xaml" />
   </ItemGroup>

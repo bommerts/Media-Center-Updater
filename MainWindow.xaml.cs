@@ -37,6 +37,9 @@ public sealed partial class MainWindow : Window
         System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(
             typeof(MainWindow).Assembly)?.InformationalVersion ?? "unknown";
 
+    /// <summary>Full path to a file in the app's Assets folder.</summary>
+    public static string AssetPath(string fileName) => System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", fileName);
+
     public MainWindow(AppSettings settings, SettingsStore store, UpdateCoordinator coordinator)
     {
         _settings = settings;
@@ -44,8 +47,9 @@ public sealed partial class MainWindow : Window
         _coordinator = coordinator;
         InitializeComponent();
         AppWindow.Resize(new SizeInt32(1180, 900));
-        Title = "Media Center Updater";
+        Title = "Media Center Updater " + AppVersion;
         AppVersionText.Text = "Version " + AppVersion;
+        if (System.IO.File.Exists(AssetPath("AppIcon.ico"))) AppWindow.SetIcon(AssetPath("AppIcon.ico"));
         AppWindow.Closing += Window_Closing;
         Closed += Window_Closed;
 

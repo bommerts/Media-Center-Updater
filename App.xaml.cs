@@ -17,6 +17,14 @@ public partial class App : Microsoft.UI.Xaml.Application
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
+        // Used by the uninstaller: remove the sign-in startup task, then quit without showing a window.
+        if (Environment.GetCommandLineArgs().Contains("--remove-startup", StringComparer.OrdinalIgnoreCase))
+        {
+            try { WindowsIntegration.SetStartupEnabled(false); } catch (Exception) { }
+            Exit();
+            return;
+        }
+
         // One updater per desktop session, including elevated and ordinary launches.
         bool isFirst;
         try { instanceMutex = new Mutex(true, @"Local\MediaCenterUpdater.Instance", out isFirst); }
