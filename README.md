@@ -10,11 +10,60 @@ It is a native Windows app built with WinUI 3 (Windows App SDK 2.4.0) and .NET 1
 - The applications you want to update already installed on the same PC as the updater. You don't need all five; turn off monitoring for any you don't use.
 - Administrator rights on that PC. Most installers need them.
 
-## Install
+## Installing on your media server
 
-1. Build the app (see [Building](#building)), then copy the **whole** published `App` folder to a permanent location on the PC that runs your media apps, for example `C:\Program Files\Media Center Updater`. Copy every file, including `resources.pri` and the DLLs, not just the EXE.
-2. Sign in to Windows as the account that runs your media apps. Plex and SABnzbd in particular are usually run by one specific user. Your Windows password is never stored by the updater.
-3. Run `MediaCenterUpdater.exe` and approve the Windows administrator prompt.
+The updater must run **on the same Windows PC as your media apps**. It updates the copies installed on that PC, so it can't update a server elsewhere on your network. In these steps, "media server" means that PC.
+
+There's no installer yet. You build the app once, then copy the finished folder to your media server. You can build on the media server itself or on any other Windows PC.
+
+### Step 1: Build the app
+
+1. On a Windows PC, install the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (x64).
+2. Get the source code. Either:
+   - on this GitHub page, click **Code > Download ZIP** and extract it, or
+   - run `git clone https://github.com/bommerts/Media-Center-Updater.git`.
+3. Open PowerShell in the extracted folder and run:
+
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File .\Publish.ps1
+   ```
+
+   This runs the tests (they never install real updates) and creates an `App` folder containing the finished app. The first build downloads packages and can take a few minutes.
+
+### Step 2: Copy it to your media server
+
+1. On the media server, create a permanent folder for the app, for example `C:\Program Files\Media Center Updater`.
+2. Copy **everything inside** the `App` folder into it, not just `MediaCenterUpdater.exe`. The app needs the DLLs and `resources.pri` next to it.
+
+Pick the folder carefully. If you turn on starting with Windows, Windows remembers this location. If you move the folder later, turn **Start with Windows when I sign in** off and on again from the new location.
+
+### Step 3: First run
+
+1. Sign in to the media server as the **Windows account that runs your media apps**. If Plex or SABnzbd run as a normal app rather than a Windows service, they run under that one user's account. The updater refuses to restart an app that belongs to a different account. Your Windows password is never stored.
+2. Double-click `MediaCenterUpdater.exe` and approve the Windows administrator prompt. The app asks for this every time it starts, because most installers need administrator rights.
+3. Turn off **Monitor** for any of the five programs you don't have installed.
+4. **Radarr and Sonarr:** check their URLs. The defaults are `http://localhost:7878` and `http://localhost:8989`. If you changed the port, added a URL base (such as `/radarr`) or use HTTPS, enter the address you use in your browser on the media server, then click **Save connections**. The app usually finds the API keys by itself. If a key box stays empty, copy the key from that app's **Settings > General > Security**.
+5. **Pulsarr:** read the installation note. If it says your setup needs attention, reinstall Pulsarr with its official Windows installer and select the Windows service option.
+6. Click **Check for updates**. This only checks and installs nothing, so it's a safe way to confirm each program is detected.
+
+### Step 4: Keep it running
+
+1. Turn on **Start with Windows when I sign in**. The updater then starts in the notification area each time you sign in, without an administrator prompt.
+2. Optional: turn on **Scheduled updates** and pick how often to check, or a daily time. Choose a time when nobody is watching or downloading, because updates briefly restart the apps.
+3. Close the window. The updater keeps running in the notification area, next to the clock.
+
+The updater only runs while someone is signed in to the media server. If your server sits at the sign-in screen after a reboot, scheduled updates won't run until someone signs in. Windows can sign in automatically if you want unattended updates; that's a Windows setting, not part of this app.
+
+### Updating the updater
+
+Build a new copy (step 1), exit the updater from its tray menu, copy the new `App` contents over the old ones, then start it again. Your settings are kept.
+
+### Uninstalling
+
+1. Turn off **Start with Windows when I sign in**. This removes its Task Scheduler task.
+2. Exit the updater from its tray menu.
+3. Delete the app's folder.
+4. Optionally delete `%LOCALAPPDATA%\MediaCenterUpdater`, which holds its settings, saved keys and logs.
 
 ## Use
 
