@@ -70,6 +70,7 @@ public sealed partial class MainWindow : Window
             _programs.Add(new ProgramRow(program, ProgramPreferenceChanged));
         }
         ProgramsList.ItemsSource = _programs;
+        UsageList.ItemsSource = _programs;
         ActivityList.ItemsSource = _activity;
         foreach (ActivityEntry entry in store.ReadRecentActivity().OrderByDescending(a => a.Time).Take(30))
             _activity.Add(new ActivityRow(entry));
@@ -93,6 +94,7 @@ public sealed partial class MainWindow : Window
         RadarrKeyBox.Password = radarr.ApiKey;
         SonarrUrlBox.Text = sonarr.ServerUrl;
         SonarrKeyBox.Password = sonarr.ApiKey;
+        PulsarrKeyBox.Password = Program(ApplicationId.Pulsarr).ApiKey;
         try { StartupBox.IsChecked = WindowsIntegration.IsStartupEnabled(); }
         catch (Exception ex) { SettingsStatusText.Text = ex.Message; }
 
@@ -236,6 +238,13 @@ public sealed partial class MainWindow : Window
         if (_initializing) return;
         SaveSettings();
         RefreshPreferences();
+    }
+
+    private void PulsarrKey_Changed(object sender, RoutedEventArgs e)
+    {
+        if (_initializing) return;
+        Program(ApplicationId.Pulsarr).ApiKey = PulsarrKeyBox.Password.Trim();
+        SaveSettings();
     }
 
     private void Selection_Changed(object sender, SelectionChangedEventArgs e) => Preference_Changed(sender, e);
@@ -699,6 +708,13 @@ public sealed class ProgramRow : INotifyPropertyChanged
     public string Description => ApplicationCatalog.Description(Id);
     public string MonitorAccessibleName => "Monitor " + Name;
     public string InstallAccessibleName => "Automatically install updates for " + Name;
+    public string UsageDescription => ApplicationCatalog.UsageDescription(Id);
+    public string UsageAccessibleName => "Wait to update " + Name + " while it is in use";
+    public bool WaitWhileInUse
+    {
+        get => _settings.WaitWhileInUse;
+        set { if (_settings.WaitWhileInUse == value) return; _settings.WaitWhileInUse = value; Notify(); _changed(); }
+    }
     public bool Enabled
     {
         get => _settings.Enabled;

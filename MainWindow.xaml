@@ -131,7 +131,32 @@
                                     <TimePicker x:Name="DailyTimePicker" Header="Local time" ClockIdentifier="12HourClock" TimeChanged="DailyTime_Changed" AutomationProperties.Name="Daily update time" />
                                 </StackPanel>
                                 <TextBlock x:Name="ScheduleDetailText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                <TextBlock Text="The app must be running for scheduled checks. Missed checks run when it is next available. Updates may briefly interrupt playback or downloads." Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap" />
+                                <TextBlock Text="The app must be running for scheduled checks. Missed checks run when it is next available. Updates may briefly interrupt playback or downloads unless you turn on Wait while apps are in use below." Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}" BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}" BorderThickness="1" CornerRadius="10" Padding="22">
+                            <StackPanel Spacing="16">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Text="Wait while apps are in use" FontSize="17" FontWeight="SemiBold" />
+                                    <TextBlock Text="Automatic installs skip a checked app while it is busy and try again in about 30 minutes. Checking for updates is not affected." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
+                                <ItemsControl x:Name="UsageList">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding WaitWhileInUse, Mode=TwoWay}" IsEnabled="{Binding IsEditable}" Margin="0,0,0,6" AutomationProperties.Name="{Binding UsageAccessibleName}">
+                                                <StackPanel Spacing="2">
+                                                    <TextBlock Text="{Binding Name}" />
+                                                    <TextBlock Text="{Binding UsageDescription}" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                                </StackPanel>
+                                            </CheckBox>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <StackPanel Spacing="4" MaxWidth="460" HorizontalAlignment="Left">
+                                    <PasswordBox x:Name="PulsarrKeyBox" Header="Pulsarr API key (optional)" PasswordRevealMode="Peek" PasswordChanged="PulsarrKey_Changed" AutomationProperties.Name="Pulsarr API key" />
+                                    <TextBlock Text="Only needed if Pulsarr asks you to sign in from this PC. Create a key in Pulsarr's settings. Plex, SABnzbd, Radarr, and Sonarr are checked using the settings already on this PC." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                </StackPanel>
                             </StackPanel>
                         </Border>
 

@@ -10,6 +10,7 @@
     <Compile Include="..\SettingsStore.cs" Link="SettingsStore.cs" />
     <Compile Include="..\UpdateCoordinator.cs" Link="UpdateCoordinator.cs" />
     <Compile Include="..\Services\UpdateProviders.cs" Link="UpdateProviders.cs" />
+    <Compile Include="..\Services\UsageChecks.cs" Link="UsageChecks.cs" />
     <Compile Include="..\Services\LocalSetupDiscovery.cs" Link="LocalSetupDiscovery.cs" />
     <Compile Include="..\Services\SelfUpdater.cs" Link="SelfUpdater.cs" />
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />

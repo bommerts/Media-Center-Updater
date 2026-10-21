@@ -16,6 +16,8 @@ public sealed class ProgramSettings
     public bool AutoInstall { get; set; } = true;
     public string ServerUrl { get; set; } = "";
     public string ApiKey { get; set; } = "";
+    // Hold back automatic installs while the app is busy (for example Plex streaming).
+    public bool WaitWhileInUse { get; set; }
 }
 
 public sealed class AppSettings
@@ -45,12 +47,16 @@ public sealed class AppSettings
 }
 
 public sealed record UpdateResult(ApplicationId Id, UpdateState State, string InstalledVersion = "", string AvailableVersion = "", string Message = "", string? DownloadUrl = null, string? Sha256 = null);
+public enum UsageState { Idle, InUse, Unknown }
+public sealed record UsageResult(UsageState State, string Message);
 public sealed record ActivityEntry(DateTimeOffset Time, string Application, string Message, bool IsError = false);
 
 public interface IUpdateProvider
 {
     Task<UpdateResult> CheckAsync(ProgramSettings settings, CancellationToken cancellationToken);
     Task<UpdateResult> InstallAsync(ProgramSettings settings, UpdateResult update, CancellationToken cancellationToken);
+    /// <summary>Read-only check of whether the app is busy right now (streaming, downloading, running a task).</summary>
+    Task<UsageResult> CheckUsageAsync(ProgramSettings settings, CancellationToken cancellationToken);
 }
 
 public static class ApplicationCatalog
@@ -62,5 +68,12 @@ public static class ApplicationCatalog
     public static string Description(ApplicationId id) => id switch
     {
         ApplicationId.Plex => "Your media library, always ready.", ApplicationId.Sabnzbd => "Keep your download manager current.", ApplicationId.Radarr => "Movie collection management.", ApplicationId.Sonarr => "TV series collection management.", _ => "Plex watchlist automation."
+    };
+    public static string UsageDescription(ApplicationId id) => id switch
+    {
+        ApplicationId.Plex => "Someone is watching or listening.",
+        ApplicationId.Sabnzbd => "A download is in progress or being unpacked.",
+        ApplicationId.Radarr or ApplicationId.Sonarr => "A search, import, rename, or other task is running.",
+        _ => "Pulsarr is starting up or syncing watchlists."
     };
 }

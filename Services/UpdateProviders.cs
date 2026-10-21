@@ -19,7 +19,7 @@ using Microsoft.Win32;
 namespace MediaCenterUpdater;
 
 /// <summary>Uses official public release feeds and each application's own Windows updater.</summary>
-public sealed class UpdateProviders : IUpdateProvider
+public sealed partial class UpdateProviders : IUpdateProvider
 {
     private const string PulsarrKey = "{B8A42C5E-7D91-4F8C-B5E3-9A7C6D8E2F10}_is1";
     private const string UninstallRoot = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall";

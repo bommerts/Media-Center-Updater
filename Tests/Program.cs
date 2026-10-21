@@ -15,6 +15,19 @@ if (args.Contains("--inspect-local"))
     return;
 }
 
+if (args.Contains("--inspect-usage"))
+{
+    // Read-only: asks each app on this PC whether it is busy. Uses the saved Radarr/Sonarr/Pulsarr settings.
+    var checker = new UpdateProviders();
+    foreach (var program in new SettingsStore().Load().Programs)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var usage = await checker.CheckUsageAsync(program, timeout.Token);
+        Console.WriteLine($"{program.Id}: {usage.State} - {usage.Message}");
+    }
+    return;
+}
+
 if (args.Length == 2 && args[0] == "--inspect-self-update")
 {
     // Finds and downloads the real latest release as if this were the given older version.
@@ -61,6 +74,37 @@ Assert(provider.Checked.SequenceEqual(new[] { ApplicationId.Plex, ApplicationId.
 provider.Checked.Clear();
 await coordinator.RunAsync(true);
 Assert(provider.Installed.SequenceEqual(new[] { ApplicationId.Plex }), "Automatic updates respect each program's install switch");
+
+settings = Only(ApplicationId.Plex, ApplicationId.Sabnzbd, ApplicationId.Sonarr);
+foreach (var program in settings.Programs) program.WaitWhileInUse = true;
+settings.Programs[2].WaitWhileInUse = false;
+provider = new FakeProvider();
+provider.Usage[ApplicationId.Plex] = UsageState.InUse;
+provider.Usage[ApplicationId.Sabnzbd] = UsageState.Unknown;
+provider.Usage[ApplicationId.Sonarr] = UsageState.InUse;
+coordinator = new(settings, Store("in-use"), provider);
+var usageResults = new List<UpdateResult>();
+coordinator.ResultChanged += usageResults.Add;
+var waitingCount = await coordinator.RunAsync(true);
+Assert(provider.Installed.SequenceEqual(new[] { ApplicationId.Sonarr }), "Apps set to wait are not updated while busy or when their activity cannot be checked");
+Assert(waitingCount == 1 && usageResults.Any(r => r.Id == ApplicationId.Plex && r.State == UpdateState.UpdateAvailable && r.Message.StartsWith("Update waiting")), "A busy app keeps its available update and says it is waiting");
+Assert(!provider.UsageChecked.Contains(ApplicationId.Sonarr), "Apps not set to wait are installed without a busy check");
+provider = new FakeProvider();
+coordinator = new(settings, Store("idle"), provider);
+await coordinator.RunAsync(true);
+Assert(provider.Installed.Count == 3, "Idle apps set to wait are updated normally");
+provider = new FakeProvider();
+coordinator = new(settings, Store("check-only-usage"), provider);
+await coordinator.RunAsync(false);
+Assert(provider.UsageChecked.Count == 0, "Check-only scans never ask whether apps are busy");
+settings.ScheduleEnabled = true;
+settings.ScheduleMode = ScheduleMode.Daily;
+settings.NextRun = DateTimeOffset.Now.AddMinutes(-1);
+provider = new FakeProvider();
+provider.Usage[ApplicationId.Plex] = UsageState.InUse;
+coordinator = new(settings, Store("retry"), provider);
+await coordinator.EvaluateScheduleAsync();
+Assert(settings.NextRun <= DateTimeOffset.Now.Add(UpdateCoordinator.InUseRetryDelay).AddSeconds(5), "A scheduled update that waited for a busy app retries in about 30 minutes");
 
 provider = new FakeProvider { FailId = ApplicationId.Plex };
 coordinator = new(settings, Store("failure"), provider);
@@ -141,6 +185,38 @@ Assert(!LocalSetupDiscovery.EvaluatePulsarrSetup(true, pulsarrExecutable, true, 
 Assert(!LocalSetupDiscovery.EvaluatePulsarrSetup(true, pulsarrExecutable, true, true, "\"" + Path.Combine(directory, "Other", "pulsarr-service.exe") + "\"", "").IsSupported, "A service for a different Pulsarr copy cannot claim automatic-update support");
 Assert(!LocalSetupDiscovery.EvaluatePulsarrSetup(true, pulsarrExecutable, true, true, "\"" + pulsarrExecutable + "\"", null).IsSupported, "Pulsarr support requires saved installation choices so updates can preserve them");
 
+var sab = UpdateProviders.ReadSabnzbdConfig("__version__ = 19\n[misc]\nhost = 0.0.0.0\nport = 8090\nurl_base = /sab\napi_key = test-sab-key\nenable_https = 0\n[servers]\n[[news]]\nport = 563\n");
+Assert(sab is { Host: "127.0.0.1", Port: 8090, Https: false, UrlBase: "/sab", ApiKey: "test-sab-key" }, "SABnzbd's address and key are read from its [misc] settings only");
+Assert(UpdateProviders.ReadSabnzbdConfig("[misc]\nenable_https = 1\n").Https, "SABnzbd with HTTPS on its main port is checked over HTTPS");
+Assert(UpdateProviders.CountPlexSessions(System.Text.Json.JsonDocument.Parse("{\"MediaContainer\":{\"size\":2}}").RootElement) == 2, "Plex stream count comes from its sessions list");
+var pulsarrData = Path.Combine(directory, "pulsarr-data");
+Directory.CreateDirectory(pulsarrData);
+Assert(UpdateProviders.ReadPulsarrAddress(pulsarrData) == (3003, ""), "Pulsarr defaults to port 3003");
+File.WriteAllText(Path.Combine(pulsarrData, ".env"), "# comment\nport=4000\nlistenPort=3100\nbasePath=/pulsarr\n");
+Assert(UpdateProviders.ReadPulsarrAddress(pulsarrData) == (3100, "/pulsarr"), "Pulsarr's listen port and base path come from its .env file");
+
+var usageHandler = new UsageHandler();
+var sabIni = Path.Combine(directory, "sabnzbd.ini");
+File.WriteAllText(sabIni, "[misc]\nport = 8080\napi_key = test-sab-key\n");
+var usageProvider = new UpdateProviders(new HttpClient(usageHandler)) { SabnzbdConfigOverride = sabIni, PulsarrDataOverride = pulsarrData };
+var arrSettings = new ProgramSettings { Id = ApplicationId.Radarr, ServerUrl = "http://localhost:7878", ApiKey = "test-token" };
+usageHandler.Body = "[{\"name\":\"RefreshMonitoredDownloads\",\"status\":\"started\"},{\"name\":\"MoviesSearch\",\"commandName\":\"Movies Search\",\"status\":\"completed\"}]";
+Assert((await usageProvider.CheckUsageAsync(arrSettings, CancellationToken.None)).State == UsageState.Idle, "Routine Radarr housekeeping does not count as in use");
+usageHandler.Body = "[{\"name\":\"MoviesSearch\",\"commandName\":\"Movies Search\",\"status\":\"started\"}]";
+var arrUsage = await usageProvider.CheckUsageAsync(arrSettings, CancellationToken.None);
+Assert(arrUsage.State == UsageState.InUse && arrUsage.Message.Contains("Movies Search"), "A running Radarr search counts as in use");
+usageHandler.Body = "{\"queue\":{\"paused\":false,\"noofslots_total\":3}}";
+Assert((await usageProvider.CheckUsageAsync(new ProgramSettings { Id = ApplicationId.Sabnzbd }, CancellationToken.None)).State == UsageState.InUse, "An active SABnzbd download counts as in use");
+Assert(usageHandler.LastUri!.AbsolutePath == "/sabnzbd/api" && usageHandler.LastUri.Query.Contains("mode=queue"), "SABnzbd is checked through its local API");
+usageHandler.Body = "{\"MediaContainer\":{\"size\":0}}";
+Assert((await usageProvider.CheckUsageAsync(new ProgramSettings { Id = ApplicationId.Plex }, CancellationToken.None)).State == UsageState.Idle, "Plex with no streams is idle");
+usageHandler.Status = System.Net.HttpStatusCode.Unauthorized;
+var pulsarrUsage = await usageProvider.CheckUsageAsync(new ProgramSettings { Id = ApplicationId.Pulsarr }, CancellationToken.None);
+Assert(pulsarrUsage.State == UsageState.Unknown && pulsarrUsage.Message.Contains("API key") && usageHandler.LastUri!.Port == 3100, "Pulsarr asks for an API key when its check is refused");
+usageHandler.Status = System.Net.HttpStatusCode.OK;
+usageHandler.Refuse = true;
+Assert((await usageProvider.CheckUsageAsync(new ProgramSettings { Id = ApplicationId.Plex }, CancellationToken.None)).State == UsageState.Idle, "An app that is not running is not in use");
+
 var handler = new FeedHandler();
 var actualProvider = new UpdateProviders(new HttpClient(handler));
 var connection = new ProgramSettings { Id = ApplicationId.Radarr, ServerUrl = "http://localhost:7878/radarr", ApiKey = "test-token" };
@@ -196,6 +272,13 @@ sealed class FakeProvider : IUpdateProvider
     public List<ApplicationId> Checked { get; } = new();
     public List<ApplicationId> Installed { get; } = new();
     public ApplicationId? FailId { get; init; }
+    public Dictionary<ApplicationId, UsageState> Usage { get; } = new();
+    public List<ApplicationId> UsageChecked { get; } = new();
+    public Task<UsageResult> CheckUsageAsync(ProgramSettings settings, CancellationToken cancellationToken)
+    {
+        UsageChecked.Add(settings.Id);
+        return Task.FromResult(new UsageResult(Usage.GetValueOrDefault(settings.Id, UsageState.Idle), "Test usage."));
+    }
     public TaskCompletionSource? Block { get; init; }
     public async Task<UpdateResult> CheckAsync(ProgramSettings settings, CancellationToken cancellationToken)
     {
@@ -229,5 +312,19 @@ sealed class FeedHandler : HttpMessageHandler
             ? new { version = InstalledVersion, isDocker = Docker, packageUpdateMechanism = "builtIn" }
             : new[] { new { version = AvailableVersion, latest = true, installable = Installable } };
         return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(System.Text.Json.JsonSerializer.Serialize(body)) });
+    }
+}
+
+sealed class UsageHandler : HttpMessageHandler
+{
+    public string Body { get; set; } = "{}";
+    public System.Net.HttpStatusCode Status { get; set; } = System.Net.HttpStatusCode.OK;
+    public bool Refuse { get; set; }
+    public Uri? LastUri { get; private set; }
+    protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        LastUri = request.RequestUri;
+        if (Refuse) throw new HttpRequestException(HttpRequestError.ConnectionError, "refused");
+        return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(Body) });
     }
 }

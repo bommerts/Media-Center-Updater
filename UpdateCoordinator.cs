@@ -12,6 +12,8 @@ public sealed class UpdateCoordinator
     private readonly IUpdateProvider provider;
     private readonly SemaphoreSlim gate = new(1, 1);
     public bool IsBusy { get; private set; }
+    /// <summary>How soon a scheduled run tries again after an update waited because its app was in use.</summary>
+    public static readonly TimeSpan InUseRetryDelay = TimeSpan.FromMinutes(30);
     public event Action<UpdateResult>? ResultChanged;
     public event Action<ActivityEntry>? Activity;
     public event Action<bool>? BusyChanged;
@@ -58,23 +60,35 @@ public sealed class UpdateCoordinator
         settings.LastScheduledRun = DateTimeOffset.Now;
         settings.NextRun = ComputeNextRun(settings, DateTimeOffset.Now);
         store.Save(settings);
-        await RunAsync(true);
+        var waiting = await RunAsync(true);
+        if (waiting > 0 && settings.ScheduleEnabled)
+        {
+            // Try again soon instead of waiting a full interval or a whole day.
+            var retry = DateTimeOffset.Now.Add(InUseRetryDelay);
+            if (settings.NextRun is null || retry < settings.NextRun)
+            {
+                settings.NextRun = retry;
+                store.Save(settings);
+            }
+        }
     }
 
-    public async Task RunAsync(bool installUpdates)
+    /// <summary>Returns how many updates waited because their app was in use.</summary>
+    public async Task<int> RunAsync(bool installUpdates)
     {
-        if (!await gate.WaitAsync(0)) return;
+        if (!await gate.WaitAsync(0)) return 0;
         IsBusy = true;
         BusyChanged?.Invoke(true);
         var updated = 0;
         var available = 0;
         var needsAttention = 0;
+        var waiting = 0;
         try
         {
             // Work from a snapshot so changes made in the form only affect the next run.
             var programs = settings.Programs.Where(p => p.Enabled).Select(p => new ProgramSettings
-            { Id = p.Id, Enabled = p.Enabled, AutoInstall = p.AutoInstall, ServerUrl = p.ServerUrl, ApiKey = p.ApiKey }).ToArray();
-            if (programs.Length == 0) { SummaryChanged?.Invoke("Turn on monitoring for at least one program."); return; }
+            { Id = p.Id, Enabled = p.Enabled, AutoInstall = p.AutoInstall, ServerUrl = p.ServerUrl, ApiKey = p.ApiKey, WaitWhileInUse = p.WaitWhileInUse }).ToArray();
+            if (programs.Length == 0) { SummaryChanged?.Invoke("Turn on monitoring for at least one program."); return 0; }
             Write("Updater", installUpdates ? "Scan and automatic updates started." : "Update check started. No updates will be installed during this check.");
             foreach (var program in programs)
             {
@@ -89,7 +103,18 @@ public sealed class UpdateCoordinator
                     Write(name, result.Message, result.State is UpdateState.Error);
                     if (result.State == UpdateState.UpdateAvailable)
                     {
-                        if (installUpdates && program.AutoInstall)
+                        var usage = installUpdates && program.AutoInstall && program.WaitWhileInUse
+                            ? await CheckUsageAsync(program) : null;
+                        if (usage is { State: not UsageState.Idle })
+                        {
+                            var waitMessage = usage.State == UsageState.InUse
+                                ? $"Update waiting: {usage.Message} It will be installed when {name} is not in use."
+                                : $"Update waiting: {usage.Message}";
+                            ResultChanged?.Invoke(result with { Message = waitMessage });
+                            Write(name, waitMessage, usage.State == UsageState.Unknown);
+                            if (usage.State == UsageState.InUse) waiting++; else needsAttention++;
+                        }
+                        else if (installUpdates && program.AutoInstall)
                         {
                             SummaryChanged?.Invoke($"Updating {name}...");
                             ResultChanged?.Invoke(result with { State = UpdateState.Installing, Message = "Installing update. Keep the updater running." });
@@ -114,15 +139,31 @@ public sealed class UpdateCoordinator
                     needsAttention++;
                 }
             }
-            var summary = $"Finished: {updated} updated, {available} updates available, {needsAttention} need attention.";
+            var summary = $"Finished: {updated} updated, {available} updates available, " +
+                (waiting > 0 ? $"{waiting} waiting until the app is not in use, " : "") + $"{needsAttention} need attention.";
             SummaryChanged?.Invoke(summary);
             Write("Updater", summary);
+            return waiting;
         }
         finally
         {
             IsBusy = false;
             gate.Release();
             BusyChanged?.Invoke(false);
+        }
+    }
+
+    private async Task<UsageResult> CheckUsageAsync(ProgramSettings program)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            return await provider.CheckUsageAsync(program, timeout.Token);
+        }
+        catch (Exception)
+        {
+            // Never install when the busy check itself failed; the user asked to wait.
+            return new(UsageState.Unknown, $"Could not check whether {ApplicationCatalog.Name(program.Id)} is in use, so the update was not installed.");
         }
     }
 
