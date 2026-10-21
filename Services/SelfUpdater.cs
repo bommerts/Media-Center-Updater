@@ -139,19 +139,22 @@ public sealed class SelfUpdater
     /// Starts a hidden helper that waits for this process to exit, checks the file again, then runs the
     /// setup program silently. The caller must exit right after this returns, because the setup program
     /// will not replace a running copy. The setup program reopens the app when it finishes.
+    /// When the app was open on screen, the setup program shows a progress window (no questions asked)
+    /// so the user can see the update happening. From the tray it runs with no window at all.
     /// </summary>
     public static void StartInstaller(string installerPath, string sha256, bool reopenInTray)
     {
         if (!Regex.IsMatch(sha256, "\\A[0-9a-fA-F]{64}\\z")) throw new ArgumentException("Invalid checksum.", nameof(sha256));
         static string Quote(string value) => "'" + value.Replace("'", "''") + "'";
         var log = Path.ChangeExtension(installerPath, ".log");
+        var quietness = reopenInTray ? "/VERYSILENT" : "/SILENT";
         var script = string.Join("\n",
             "$ErrorActionPreference = 'Stop'",
             $"Wait-Process -Id {Environment.ProcessId} -Timeout 120 -ErrorAction SilentlyContinue",
             $"$file = {Quote(installerPath)}",
             // Check again right before running, in case the file changed after the app verified it.
             $"if ((Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash -ne {Quote(sha256.ToUpperInvariant())}) {{ exit 1 }}",
-            $"Start-Process -FilePath $file -ArgumentList @('/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/RELAUNCH={(reopenInTray ? "tray" : "window")}', {Quote("/LOG=\"" + log + "\"")})");
+            $"Start-Process -FilePath $file -ArgumentList @('{quietness}', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-', '/RELAUNCH={(reopenInTray ? "tray" : "window")}', {Quote("/LOG=\"" + log + "\"")})");
         var start = new ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"))
         {
             UseShellExecute = false,

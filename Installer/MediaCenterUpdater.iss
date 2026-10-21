@@ -36,6 +36,8 @@ WizardStyle=modern
 ; Close a running copy (it holds this mutex) before installing or uninstalling.
 AppMutex=MediaCenterUpdater.Instance
 CloseApplications=yes
+; The app's own update shows only the progress window. Cancelling it would leave the app closed.
+AllowCancelDuringInstall=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -64,6 +66,23 @@ Filename: "{app}\{#MyAppExe}"; Flags: nowait; Check: ShouldRelaunch('window')
 Filename: "{app}\{#MyAppExe}"; Parameters: "--remove-startup"; Flags: runhidden waituntilterminated; RunOnceId: "RemoveStartupTask"
 
 [Code]
+// The app's own update runs with /SILENT, which shows just the progress window.
+// Say plainly what is happening, since the app has just closed itself.
+procedure InitializeWizard;
+begin
+  if WizardSilent then
+    WizardForm.Caption := 'Updating {#MyAppName}';
+end;
+
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if WizardSilent and (CurPageID = wpInstalling) then
+  begin
+    WizardForm.PageNameLabel.Caption := 'Installing version {#MyAppVersion}';
+    WizardForm.PageDescriptionLabel.Caption := '{#MyAppName} will reopen when the update is finished.';
+  end;
+end;
+
 function ShouldRelaunch(Mode: String): Boolean;
 begin
   Result := WizardSilent and (CompareText(ExpandConstant('{param:RELAUNCH|}'), Mode) = 0);
