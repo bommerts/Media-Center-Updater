@@ -36,6 +36,10 @@ public sealed class SettingsStore
             settings.DailyMinute = Math.Clamp(settings.DailyMinute, 0, 59);
             if (!Enum.IsDefined(settings.ScheduleMode)) settings.ScheduleMode = ScheduleMode.Interval;
             if (settings.Theme is not ("Dark" or "Light" or "System")) settings.Theme = "Dark";
+            // Version 0.3.0 saved "wait while in use" as off. It is now on by default so updates never interrupt an app.
+            if (settings.SettingsVersion < 1)
+                foreach (var program in settings.Programs) program.WaitWhileInUse = true;
+            settings.SettingsVersion = AppSettings.CurrentVersion;
             foreach (var program in settings.Programs)
             {
                 program.ApiKey ??= "";
@@ -68,6 +72,7 @@ public sealed class SettingsStore
         lock (gate)
         {
             var copy = JsonSerializer.Deserialize<AppSettings>(JsonSerializer.Serialize(settings))!;
+            copy.SettingsVersion = AppSettings.CurrentVersion;
             foreach (var program in copy.Programs)
                 if (!string.IsNullOrEmpty(program.ApiKey))
                     program.ApiKey = "dpapi:" + Convert.ToBase64String(ProtectedData.Protect(Encoding.UTF8.GetBytes(program.ApiKey), null, DataProtectionScope.CurrentUser));

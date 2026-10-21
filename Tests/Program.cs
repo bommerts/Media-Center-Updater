@@ -28,6 +28,14 @@ if (args.Contains("--inspect-usage"))
     return;
 }
 
+if (args.Contains("--inspect-pulsarr-key"))
+{
+    // Read-only: looks for Pulsarr's API key on this PC. Prints whether one was found, never the key.
+    Console.WriteLine($"Sign-in required: {LocalSetupDiscovery.PulsarrRequiresApiKey()}");
+    Console.WriteLine(LocalSetupDiscovery.FindPulsarrApiKey());
+    return;
+}
+
 if (args.Length == 2 && args[0] == "--inspect-self-update")
 {
     // Finds and downloads the real latest release as if this were the given older version.
@@ -63,6 +71,14 @@ Assert(testStore.Load().Programs[2].ApiKey == defaults.Programs[2].ApiKey, "API 
 Assert(defaults.Programs[2].ApiKey == "test-key-not-real-4321", "Saving does not replace the in-memory API key");
 File.WriteAllText(Path.Combine(testStore.DataDirectory, "settings.json"), "{ broken");
 Assert(!testStore.Load().ScheduleEnabled && testStore.LoadWarning is not null, "Corrupt settings cannot resume automatic updates");
+Assert(new AppSettings().Programs.All(p => p.WaitWhileInUse), "New installs wait while every app is in use");
+var upgradeStore = Store("upgrade");
+File.WriteAllText(Path.Combine(upgradeStore.DataDirectory, "settings.json"), "{\"Programs\":[{\"Id\":0,\"WaitWhileInUse\":false},{\"Id\":4,\"WaitWhileInUse\":false}]}");
+var upgraded = upgradeStore.Load();
+Assert(upgraded.Programs.All(p => p.WaitWhileInUse), "Settings saved by 0.3.0 are upgraded once to wait while apps are in use");
+upgraded.Programs[0].WaitWhileInUse = false;
+upgradeStore.Save(upgraded);
+Assert(!upgradeStore.Load().Programs[0].WaitWhileInUse, "Turning waiting off after the upgrade is kept");
 
 var settings = Only(ApplicationId.Plex, ApplicationId.Sabnzbd, ApplicationId.Sonarr);
 settings.Programs[1].Enabled = false;
@@ -194,6 +210,39 @@ Directory.CreateDirectory(pulsarrData);
 Assert(UpdateProviders.ReadPulsarrAddress(pulsarrData) == (3003, ""), "Pulsarr defaults to port 3003");
 File.WriteAllText(Path.Combine(pulsarrData, ".env"), "# comment\nport=4000\nlistenPort=3100\nbasePath=/pulsarr\n");
 Assert(UpdateProviders.ReadPulsarrAddress(pulsarrData) == (3100, "/pulsarr"), "Pulsarr's listen port and base path come from its .env file");
+var pulsarrKeyData = Path.Combine(directory, "pulsarr-keys");
+Assert(!LocalSetupDiscovery.FindPulsarrApiKey(pulsarrKeyData).Found, "A missing Pulsarr data folder finds no key");
+Directory.CreateDirectory(Path.Combine(pulsarrKeyData, "db"));
+Assert(LocalSetupDiscovery.PulsarrRequiresApiKey(pulsarrKeyData), "Pulsarr requires sign-in by default");
+foreach (var (method, required) in new[] { ("required", true), ("requiredExceptLocal", false), ("disabled", false) })
+{
+    File.WriteAllText(Path.Combine(pulsarrKeyData, ".env"), "authenticationMethod=" + method + "\n");
+    Assert(LocalSetupDiscovery.PulsarrRequiresApiKey(pulsarrKeyData) == required, "Pulsarr's " + method + " sign-in setting is read from its .env file");
+}
+var pulsarrMissing = LocalSetupDiscovery.FindPulsarrApiKey(pulsarrKeyData);
+Assert(!pulsarrMissing.Found && pulsarrMissing.Message.Contains("database was not found"), "A missing Pulsarr database is reported");
+var pulsarrDb = Path.Combine(pulsarrKeyData, "db", "pulsarr.db");
+TestSqlite.Execute(pulsarrDb, "CREATE TABLE admin_users (id integer PRIMARY KEY, role text); " +
+    "CREATE TABLE api_keys (id integer PRIMARY KEY AUTOINCREMENT, name text, key text, created_at datetime, is_active boolean DEFAULT '1', user_id integer NULL);");
+var noKey = LocalSetupDiscovery.FindPulsarrApiKey(pulsarrKeyData);
+Assert(!noKey.Found && noKey.Message.Contains("Utilities"), "Pulsarr without a key says where to create one");
+TestSqlite.Execute(pulsarrDb, "INSERT INTO admin_users VALUES (1, 'admin'); " +
+    "INSERT INTO api_keys (name, key, created_at, is_active, user_id) VALUES ('old', 'test-pulsarr-old', '2026-01-01', 1, 1); " +
+    "INSERT INTO api_keys (name, key, created_at, is_active, user_id) VALUES ('revoked', 'test-pulsarr-revoked', '2026-03-01', 0, 1); " +
+    "INSERT INTO api_keys (name, key, created_at, is_active, user_id) VALUES ('orphan', 'test-pulsarr-orphan', '2026-04-01', 1, NULL); " +
+    "INSERT INTO api_keys (name, key, created_at, is_active, user_id) VALUES ('new', 'test-pulsarr-new', '2026-02-01', 1, 1);");
+var pulsarrFound = LocalSetupDiscovery.FindPulsarrApiKey(pulsarrKeyData);
+Assert(pulsarrFound.Found && pulsarrFound.ApiKey == "test-pulsarr-new", "The newest active admin key is read from Pulsarr's database");
+Assert(!pulsarrFound.ToString().Contains("test-pulsarr"), "Pulsarr discovery messages never include the key");
+Assert(File.ReadAllBytes(pulsarrDb).Length > 0 && TestSqlite.Count(pulsarrDb, "SELECT count(*) FROM api_keys") == 4, "Reading Pulsarr's key does not change its database");
+File.WriteAllText(Path.Combine(pulsarrKeyData, ".env"), "dbType=postgres\n");
+Assert(!LocalSetupDiscovery.FindPulsarrApiKey(pulsarrKeyData).Found, "Pulsarr on PostgreSQL asks for the key to be pasted");
+File.WriteAllText(Path.Combine(pulsarrKeyData, ".env"), "");
+var brokenData = Path.Combine(directory, "pulsarr-broken");
+Directory.CreateDirectory(Path.Combine(brokenData, "db"));
+File.WriteAllText(Path.Combine(brokenData, "db", "pulsarr.db"), "not a database");
+var broken = LocalSetupDiscovery.FindPulsarrApiKey(brokenData);
+Assert(!broken.Found && !broken.Message.Contains(brokenData), "An unreadable Pulsarr database fails without showing its path");
 
 var usageHandler = new UsageHandler();
 var sabIni = Path.Combine(directory, "sabnzbd.ini");
@@ -326,5 +375,36 @@ sealed class UsageHandler : HttpMessageHandler
         LastUri = request.RequestUri;
         if (Refuse) throw new HttpRequestException(HttpRequestError.ConnectionError, "refused");
         return Task.FromResult(new HttpResponseMessage(Status) { Content = new StringContent(Body) });
+    }
+}
+
+static class TestSqlite
+{
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_open(byte[] name, out IntPtr db);
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_exec(IntPtr db, byte[] sql, IntPtr callback, IntPtr arg, IntPtr error);
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_prepare_v2(IntPtr db, byte[] sql, int length, out IntPtr statement, IntPtr tail);
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_step(IntPtr statement);
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_column_int(IntPtr statement, int column);
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_finalize(IntPtr statement);
+    [System.Runtime.InteropServices.DllImport("winsqlite3.dll")] static extern int sqlite3_close(IntPtr db);
+    static byte[] Utf8(string text) => System.Text.Encoding.UTF8.GetBytes(text + "\0");
+
+    public static void Execute(string path, string sql)
+    {
+        if (sqlite3_open(Utf8(path), out var db) != 0) throw new Exception("Test database could not be opened.");
+        try { if (sqlite3_exec(db, Utf8(sql), IntPtr.Zero, IntPtr.Zero, IntPtr.Zero) != 0) throw new Exception("Test SQL failed."); }
+        finally { sqlite3_close(db); }
+    }
+
+    public static int Count(string path, string sql)
+    {
+        if (sqlite3_open(Utf8(path), out var db) != 0) throw new Exception("Test database could not be opened.");
+        try
+        {
+            sqlite3_prepare_v2(db, Utf8(sql), -1, out var statement, IntPtr.Zero);
+            try { return sqlite3_step(statement) == 100 ? sqlite3_column_int(statement, 0) : -1; }
+            finally { sqlite3_finalize(statement); }
+        }
+        finally { sqlite3_close(db); }
     }
 }

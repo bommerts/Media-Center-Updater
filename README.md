@@ -11,9 +11,9 @@ A Windows app that keeps the software on a home media server up to date. It chec
 - Checks all supported apps at once, or installs their updates in one click.
 - Scheduled updates, every few hours or at a set time each day.
 - Per-app switches to monitor an app, and to let it update automatically.
-- Optionally waits to update an app while it is in use: Plex streaming, SABnzbd downloading, Radarr or Sonarr running a task, or Pulsarr syncing.
+- Waits to update an app while it is in use: Plex streaming, SABnzbd downloading, Radarr or Sonarr running a task, or Pulsarr syncing. This is on for every app by default.
 - Verifies every download (checksums and signatures) before installing, and never reboots Windows.
-- Finds the Radarr and Sonarr API keys on the PC for you, and stores keys encrypted.
+- Finds the Radarr, Sonarr, and Pulsarr API keys on the PC for you, and stores keys encrypted.
 - Can start when you sign in to Windows, without an administrator prompt each time.
 - Minimizes to the notification area (system tray) so it can keep running in the background.
 - Light, dark, or system theme.
@@ -89,7 +89,7 @@ Uninstall **Media Center Updater** from Windows **Settings > Apps > Installed ap
 3. **Check & install** checks and immediately applies eligible updates, respecting each program's Automatic install switch.
 4. Optional: turn on **Start with Windows when I sign in**. This creates a Task Scheduler task for the current Windows user that starts the updater in the tray with administrator rights, so there is no elevation prompt at each sign-in. Use this option rather than a shortcut in the Startup folder. It runs after sign-in, not before.
 5. Optional: turn on **Scheduled updates** and pick an interval (1 to 168 hours) or a daily time. Scheduled runs install updates for monitored programs that have Automatic install turned on. The schedule is off by default.
-6. Optional: in **Settings > Wait while apps are in use**, check the apps that should not be updated while busy. An install for a checked app is skipped while it is in use and tried again about 30 minutes later. If the app cannot be checked, the update also waits and the app shows why. Pulsarr may need an API key for this check (create one in Pulsarr); the other apps are checked using their settings on the PC.
+6. **Settings > Wait while apps are in use** is on for every app, so an update never interrupts an app that is busy. An install for a checked app is skipped while it is in use and tried again about 30 minutes later. If the app cannot be checked, the update also waits and the app shows why. Uncheck an app to update it even while it is busy. Pulsarr requires sign-in by default, so this check needs a Pulsarr API key. The updater reads one from Pulsarr's database on this PC by itself. A **Pulsarr API key** box with a **Find key** button appears only when a key is needed. If Pulsarr has no key yet, create one in Pulsarr under **Utilities > API Keys**, then click **Find key**.
 
 Closing or minimizing the window hides it in the notification area by default. Double-click the tray icon to reopen it; its menu offers Open, Check for updates, and Exit. Settings let you turn this off, start minimized, and choose a Light, Dark, or system theme. The updater only runs while a Windows user is signed in and the PC is awake. A missed scheduled run happens once when the app next resumes or starts.
 
@@ -111,7 +111,7 @@ Radarr and Sonarr default to `http://localhost:7878` and `http://localhost:8989`
 
 They also need an API key, which works like a password that lets the updater check them and ask them to update. When the updater opens, it reads each app's local settings file and fills in any empty key boxes. Keys are saved encrypted for the current Windows account. **Find API keys again** repeats the search and replaces a key only when it finds a matching one. Keys are only read for addresses on this PC; for anything else, copy the key from the app's **Settings > General > Security** and click **Save connections**.
 
-Plex, SABnzbd, and Pulsarr don't need API keys.
+Plex and SABnzbd don't need API keys. Pulsarr's key is only used to check whether it is busy, so it appears under **Wait while apps are in use** when needed.
 
 ### Pulsarr installation check
 

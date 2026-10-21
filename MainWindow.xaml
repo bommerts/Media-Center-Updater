@@ -153,9 +153,19 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <StackPanel Spacing="4" MaxWidth="460" HorizontalAlignment="Left">
-                                    <PasswordBox x:Name="PulsarrKeyBox" Header="Pulsarr API key (optional)" PasswordRevealMode="Peek" PasswordChanged="PulsarrKey_Changed" AutomationProperties.Name="Pulsarr API key" />
-                                    <TextBlock Text="Only needed if Pulsarr asks you to sign in from this PC. Create a key in Pulsarr's settings. Plex, SABnzbd, Radarr, and Sonarr are checked using the settings already on this PC." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                <!-- Shown only when Pulsarr requires sign-in, so its busy check needs a key. -->
+                                <StackPanel x:Name="PulsarrKeyPanel" Spacing="6" MaxWidth="560" HorizontalAlignment="Left" Visibility="Collapsed">
+                                    <TextBlock Text="Pulsarr API key" FontWeight="SemiBold" />
+                                    <TextBlock Text="Pulsarr requires sign-in, so the updater needs a key to ask whether Pulsarr is syncing. Find key reads one from Pulsarr on this PC." FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                    <Grid ColumnSpacing="8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <PasswordBox x:Name="PulsarrKeyBox" PasswordRevealMode="Peek" PasswordChanged="PulsarrKey_Changed" AutomationProperties.Name="Pulsarr API key" />
+                                        <Button x:Name="FindPulsarrKeyButton" Grid.Column="1" Content="Find key" Click="FindPulsarrKey_Click" ToolTipService.ToolTip="Read an API key from Pulsarr's database on this PC. Nothing in Pulsarr is changed." />
+                                    </Grid>
+                                    <TextBlock x:Name="PulsarrKeyStatusText" FontSize="12" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite" />
                                 </StackPanel>
                             </StackPanel>
                         </Border>
@@ -217,7 +227,7 @@
                             <StackPanel Spacing="16">
                                 <TextBlock Text="Radarr &amp; Sonarr connections" FontSize="17" FontWeight="SemiBold" />
                                 <TextBlock Text="An API key is like a password that lets this updater check Radarr or Sonarr and ask it to install updates. We look for both keys on this PC when the updater opens and fill in any empty boxes. You usually do not need to enter them yourself." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
-                                <TextBlock Text="If a key is missing or has changed, choose Find API keys again. Found keys are filled in and saved securely for your Windows account. If we cannot find a key, you can copy it from that app's Settings → General → Security page. Plex, SABnzbd, and Pulsarr do not need a key here." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                <TextBlock Text="If a key is missing or has changed, choose Find API keys again. Found keys are filled in and saved securely for your Windows account. If we cannot find a key, you can copy it from that app's Settings → General → Security page. Plex and SABnzbd do not need a key. If Pulsarr needs one, it appears under Wait while apps are in use." Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
                                 <Grid ColumnSpacing="20" RowSpacing="16">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -237,7 +247,7 @@
                                     <TextBlock x:Name="SonarrKeyStatusText" Grid.Row="3" Grid.ColumnSpan="2" Text="Looking for Sonarr's key..." TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" AutomationProperties.LiveSetting="Polite" />
                                 </Grid>
                                 <StackPanel Orientation="Horizontal" Spacing="12">
-                                    <Button x:Name="FindKeysButton" Content="Find API keys again" Click="FindKeys_Click" ToolTipService.ToolTip="Read Radarr and Sonarr's settings on this PC again. Replace keys only when a matching key is found." />
+                                    <Button x:Name="FindKeysButton" Content="Find API keys again" Click="FindKeys_Click" ToolTipService.ToolTip="Read Radarr, Sonarr, and Pulsarr's settings on this PC again. Replace keys only when a matching key is found." />
                                     <Button x:Name="SaveConnectionsButton" Content="Save connections" Click="SaveConnections_Click" />
                                     <ProgressRing x:Name="KeySearchRing" Width="22" Height="22" IsActive="False" Visibility="Collapsed" AutomationProperties.Name="Looking for API keys and checking Pulsarr setup" />
                                 </StackPanel>

@@ -183,13 +183,13 @@ public sealed partial class UpdateProviders
 
     private async Task<UsageResult> CheckPulsarrUsageAsync(ProgramSettings settings, CancellationToken ct)
     {
-        var (port, basePath) = ReadPulsarrAddress(PulsarrDataOverride ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Pulsarr"));
+        var (port, basePath) = ReadPulsarrAddress(PulsarrDataOverride ?? LocalSetupDiscovery.PulsarrDataDirectory);
         var uri = new UriBuilder("http", "127.0.0.1", port, basePath.TrimEnd('/') + "/v1/watchlist-workflow/status").Uri;
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         if (!string.IsNullOrWhiteSpace(settings.ApiKey)) request.Headers.Add("X-API-Key", settings.ApiKey.Trim());
         using var response = await Http.SendAsync(request, ct);
         if (response.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden)
-            throw new ProviderException("Pulsarr needs an API key for this check. Create one in Pulsarr and enter it in Settings under Wait while apps are in use.");
+            throw new ProviderException("Pulsarr turned the check away because it needs an API key. In Settings under Wait while apps are in use, choose Find key, or paste a key from Pulsarr's Utilities → API Keys.");
         RequireSuccess(response);
         using var body = await JsonDocument.ParseAsync(await response.Content.ReadAsStreamAsync(ct), cancellationToken: ct);
         var status = Text(body.RootElement, "status");
@@ -200,18 +200,7 @@ public sealed partial class UpdateProviders
 
     internal static (int Port, string BasePath) ReadPulsarrAddress(string dataDirectory)
     {
-        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var env = Path.Combine(dataDirectory, ".env");
-        if (File.Exists(env))
-        {
-            foreach (var raw in File.ReadLines(env))
-            {
-                var line = raw.Trim();
-                if (line.StartsWith('#')) continue;
-                var equals = line.IndexOf('=');
-                if (equals > 0) values[line[..equals].Trim()] = line[(equals + 1)..].Trim().Trim('"', '\'');
-            }
-        }
+        var values = LocalSetupDiscovery.ReadPulsarrEnvironment(dataDirectory);
         // listenPort is what the server binds to; port is the public port and the usual fallback.
         var port = 3003;
         foreach (var key in new[] { "listenPort", "port" })

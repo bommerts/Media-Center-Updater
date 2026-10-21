@@ -31,6 +31,8 @@ public sealed partial class MainWindow : Window
     private bool _exiting;
     private bool _dialogOpen;
     private bool _retrievingKeys;
+    // From the last setup check: Pulsarr is installed for automatic updates and turns away requests without a key.
+    private bool _pulsarrNeedsKey;
     private readonly SelfUpdater _selfUpdater = new();
     private SelfUpdateInfo? _appUpdate;
     private bool _appUpdateBusy;
@@ -215,6 +217,8 @@ public sealed partial class MainWindow : Window
         RadarrKeyBox.IsEnabled = connectionControlsEnabled;
         SonarrUrlBox.IsEnabled = connectionControlsEnabled;
         SonarrKeyBox.IsEnabled = connectionControlsEnabled;
+        PulsarrKeyBox.IsEnabled = connectionControlsEnabled;
+        FindPulsarrKeyButton.IsEnabled = connectionControlsEnabled;
         ScheduleToggle.IsEnabled = !busy;
         ScheduleModeBox.IsEnabled = !busy && _settings.ScheduleEnabled;
         IntervalBox.IsEnabled = !busy && _settings.ScheduleEnabled;
@@ -242,8 +246,9 @@ public sealed partial class MainWindow : Window
 
     private void PulsarrKey_Changed(object sender, RoutedEventArgs e)
     {
-        if (_initializing) return;
-        Program(ApplicationId.Pulsarr).ApiKey = PulsarrKeyBox.Password.Trim();
+        string key = PulsarrKeyBox.Password.Trim();
+        if (_initializing || Program(ApplicationId.Pulsarr).ApiKey == key) return;
+        Program(ApplicationId.Pulsarr).ApiKey = key;
         SaveSettings();
     }
 
@@ -332,8 +337,19 @@ public sealed partial class MainWindow : Window
         BackgroundText.Text = TrayToggle.IsOn ? "Close to tray is on" : "Closing the window exits the app";
         int count = _programs.Count(p => p.Enabled);
         MonitoredText.Text = $"{count} of {_programs.Count} monitored";
+        RefreshPulsarrKeyPanel();
         RefreshScheduleText();
         RefreshAppUpdateControls();
+    }
+
+    // The key is only used to ask Pulsarr whether it is busy before an automatic install.
+    // A saved key keeps the panel visible so it can be changed or cleared.
+    private void RefreshPulsarrKeyPanel()
+    {
+        ProgramSettings pulsarr = Program(ApplicationId.Pulsarr);
+        bool waitApplies = pulsarr.Enabled && pulsarr.AutoInstall && pulsarr.WaitWhileInUse;
+        PulsarrKeyPanel.Visibility = waitApplies && (_pulsarrNeedsKey || !string.IsNullOrEmpty(pulsarr.ApiKey))
+            ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private static string FormatTime(DateTimeOffset time) => time.ToLocalTime().ToString("MMM d 'at' h:mm tt");
@@ -515,28 +531,41 @@ public sealed partial class MainWindow : Window
         string sonarrUrl = SonarrUrlBox.Text.Trim();
         string radarrKey = RadarrKeyBox.Password;
         string sonarrKey = SonarrKeyBox.Password;
+        string pulsarrKey = PulsarrKeyBox.Password;
         try
         {
-            var discoveries = await Task.Run(() => (
-                Radarr: replaceExistingKeys || string.IsNullOrWhiteSpace(radarrKey)
-                    ? LocalSetupDiscovery.FindApiKey(ApplicationId.Radarr, radarrUrl) : null,
-                Sonarr: replaceExistingKeys || string.IsNullOrWhiteSpace(sonarrKey)
-                    ? LocalSetupDiscovery.FindApiKey(ApplicationId.Sonarr, sonarrUrl) : null,
-                Pulsarr: LocalSetupDiscovery.CheckPulsarrSetup()));
+            var discoveries = await Task.Run(() =>
+            {
+                var pulsarrSetup = LocalSetupDiscovery.CheckPulsarrSetup();
+                bool pulsarrNeedsKey = pulsarrSetup.IsSupported && LocalSetupDiscovery.PulsarrRequiresApiKey();
+                return (
+                    Radarr: replaceExistingKeys || string.IsNullOrWhiteSpace(radarrKey)
+                        ? LocalSetupDiscovery.FindApiKey(ApplicationId.Radarr, radarrUrl) : null,
+                    Sonarr: replaceExistingKeys || string.IsNullOrWhiteSpace(sonarrKey)
+                        ? LocalSetupDiscovery.FindApiKey(ApplicationId.Sonarr, sonarrUrl) : null,
+                    Pulsarr: pulsarrSetup,
+                    PulsarrNeedsKey: pulsarrNeedsKey,
+                    PulsarrKey: pulsarrNeedsKey && (replaceExistingKeys || string.IsNullOrWhiteSpace(pulsarrKey))
+                        ? LocalSetupDiscovery.FindPulsarrApiKey() : null);
+            });
             if (_exiting) return;
 
             int filled = 0;
             if (ApplyDiscoveredKey(ApplicationId.Radarr, discoveries.Radarr, RadarrUrlBox, RadarrKeyBox, RadarrKeyStatusText, radarrUrl, radarrKey)) filled++;
             if (ApplyDiscoveredKey(ApplicationId.Sonarr, discoveries.Sonarr, SonarrUrlBox, SonarrKeyBox, SonarrKeyStatusText, sonarrUrl, sonarrKey)) filled++;
+            if (discoveries.PulsarrKey is not null && ApplyPulsarrKey(discoveries.PulsarrKey, pulsarrKey)) filled++;
             PulsarrSetupBar.Title = discoveries.Pulsarr.IsSupported ? "This PC meets Pulsarr's requirement" : "Pulsarr setup needs attention";
             PulsarrSetupBar.Message = discoveries.Pulsarr.Message;
             PulsarrSetupBar.Severity = discoveries.Pulsarr.IsSupported ? InfoBarSeverity.Success : InfoBarSeverity.Warning;
+            _pulsarrNeedsKey = discoveries.PulsarrNeedsKey;
+            RefreshPulsarrKeyPanel();
 
             if (filled > 0)
             {
                 // Save only the retrieved connections, not other edits still waiting in the form.
                 _store.Save(_settings);
-                KeySearchStatusText.Text = filled == 2 ? "Both API keys were found, filled in, and saved securely." : "One API key was found, filled in, and saved securely. See each app's result above.";
+                KeySearchStatusText.Text = filled == 1 ? "One API key was found, filled in, and saved securely. See each app's result."
+                    : $"{filled} API keys were found, filled in, and saved securely.";
             }
             else
                 KeySearchStatusText.Text = replaceExistingKeys
@@ -565,6 +594,46 @@ public sealed partial class MainWindow : Window
                 SetBusy(_coordinator.IsBusy);
             }
         }
+    }
+
+    private async void FindPulsarrKey_Click(object sender, RoutedEventArgs e)
+    {
+        if (_retrievingKeys || _coordinator.IsBusy || _exiting) return;
+        _retrievingKeys = true;
+        SetBusy(_coordinator.IsBusy);
+        PulsarrKeyStatusText.Text = "Looking in Pulsarr's database on this PC...";
+        string originalKey = PulsarrKeyBox.Password;
+        try
+        {
+            var result = await Task.Run(() => LocalSetupDiscovery.FindPulsarrApiKey());
+            if (_exiting) return;
+            if (ApplyPulsarrKey(result, originalKey)) _store.Save(_settings);
+        }
+        catch (Exception)
+        {
+            // Never show database details or key values.
+            if (!_exiting) PulsarrKeyStatusText.Text = "The key could not be saved. Try Find key again.";
+        }
+        finally
+        {
+            _retrievingKeys = false;
+            if (!_exiting) SetBusy(_coordinator.IsBusy);
+        }
+    }
+
+    private bool ApplyPulsarrKey(ApiKeyDiscoveryResult result, string originalKey)
+    {
+        if (PulsarrKeyBox.Password != originalKey)
+        {
+            PulsarrKeyStatusText.Text = "Your latest change was kept. Choose Find key again to replace it.";
+            return false;
+        }
+        PulsarrKeyStatusText.Text = result.Message;
+        if (!result.Found) return false;
+        // Set the saved key first so the box's change event sees nothing new to save.
+        Program(ApplicationId.Pulsarr).ApiKey = result.ApiKey;
+        PulsarrKeyBox.Password = result.ApiKey;
+        return true;
     }
 
     private bool ApplyDiscoveredKey(ApplicationId id, ApiKeyDiscoveryResult? result, TextBox addressBox,

@@ -16,12 +16,15 @@ public sealed class ProgramSettings
     public bool AutoInstall { get; set; } = true;
     public string ServerUrl { get; set; } = "";
     public string ApiKey { get; set; } = "";
-    // Hold back automatic installs while the app is busy (for example Plex streaming).
-    public bool WaitWhileInUse { get; set; }
+    // Hold back automatic installs while the app is busy (for example Plex streaming). On by default.
+    public bool WaitWhileInUse { get; set; } = true;
 }
 
 public sealed class AppSettings
 {
+    // Bumped when saved settings need a one-time upgrade. Files without it are version 0.
+    public const int CurrentVersion = 1;
+    public int SettingsVersion { get; set; }
     public string Theme { get; set; } = "Dark";
     public bool MinimizeToTray { get; set; } = true;
     public bool StartMinimized { get; set; }

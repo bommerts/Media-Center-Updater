@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Security;
+using System.Text;
 using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Win32;
@@ -81,6 +84,70 @@ public static class LocalSetupDiscovery
         return address.Port == port && address.AbsolutePath.Trim('/').Equals(urlBase, StringComparison.Ordinal);
     }
 
+    public static string PulsarrDataDirectory =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData), "Pulsarr");
+
+    /// <summary>Reads Pulsarr's .env file. Missing files give no values.</summary>
+    internal static Dictionary<string, string> ReadPulsarrEnvironment(string dataDirectory)
+    {
+        var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var env = Path.Combine(dataDirectory, ".env");
+        if (!File.Exists(env)) return values;
+        foreach (var raw in File.ReadLines(env))
+        {
+            var line = raw.Trim();
+            if (line.StartsWith('#')) continue;
+            var equals = line.IndexOf('=');
+            if (equals > 0) values[line[..equals].Trim()] = line[(equals + 1)..].Trim().Trim('"', '\'');
+        }
+        return values;
+    }
+
+    /// <summary>
+    /// True when Pulsarr turns away requests from this PC that have no API key. Pulsarr requires sign-in
+    /// unless its .env sets authenticationMethod to "disabled" or "requiredExceptLocal".
+    /// </summary>
+    public static bool PulsarrRequiresApiKey(string? dataDirectory = null)
+    {
+        try
+        {
+            ReadPulsarrEnvironment(dataDirectory ?? PulsarrDataDirectory).TryGetValue("authenticationMethod", out var method);
+            return method is not ("disabled" or "requiredExceptLocal");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException) { return true; }
+    }
+
+    /// <summary>Reads an active API key from Pulsarr's own database on this PC. Never changes the database.</summary>
+    public static ApiKeyDiscoveryResult FindPulsarrApiKey(string? dataDirectory = null)
+    {
+        const string createKey = "In Pulsarr, open Utilities → API Keys and generate a key, then choose Find key again.";
+        var directory = dataDirectory ?? PulsarrDataDirectory;
+        try
+        {
+            if (!Directory.Exists(directory))
+                return Missing("Pulsarr's data folder was not found on this PC. Start Pulsarr and try again, or paste a key from Utilities → API Keys.");
+            var env = ReadPulsarrEnvironment(directory);
+            if (env.TryGetValue("dbType", out var type) && type.Equals("postgres", StringComparison.OrdinalIgnoreCase))
+                return Missing("Pulsarr keeps its settings in PostgreSQL, so its key cannot be read automatically. Paste a key from Pulsarr's Utilities → API Keys.");
+            var database = env.TryGetValue("dbPath", out var configured) && Path.IsPathFullyQualified(configured)
+                ? configured : Path.Combine(directory, "db", "pulsarr.db");
+            if (!File.Exists(database))
+                return Missing("Pulsarr's database was not found on this PC. Start Pulsarr and try again, or paste a key from Utilities → API Keys.");
+            var key = PulsarrDatabase.ReadActiveApiKey(database)?.Trim() ?? "";
+            if (key.Length == 0)
+                return Missing("Pulsarr does not have an API key yet. " + createKey);
+            if (key.Length > 1024 || HasControlCharacters(key))
+                return Missing("Pulsarr's saved API key could not be read safely. Paste a key from Utilities → API Keys.");
+            return new(true, key, "Pulsarr's API key was found on this PC and saved securely.");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or SecurityException or InvalidDataException
+            or DllNotFoundException or EntryPointNotFoundException)
+        {
+            // Database errors can include file paths, so only a general message is shown.
+            return Missing("Could not read Pulsarr's database on this PC. Try Find key again, or paste a key from Utilities → API Keys.");
+        }
+    }
+
     public static PulsarrSetupResult CheckPulsarrSetup()
     {
         try
@@ -155,4 +222,49 @@ public static class LocalSetupDiscovery
     }
 
     private static ApiKeyDiscoveryResult Missing(string message) => new(false, "", message);
+}
+
+/// <summary>Read-only access to Pulsarr's SQLite database through the SQLite library built into Windows.</summary>
+internal static class PulsarrDatabase
+{
+    private const string Library = "winsqlite3.dll";
+    private const int OpenReadOnly = 0x1, Ok = 0, Row = 100, Done = 101;
+    // Pulsarr only accepts active keys that belong to an admin account.
+    private const string Query = "SELECT k.key FROM api_keys k JOIN admin_users u ON u.id = k.user_id " +
+        "WHERE k.is_active = 1 ORDER BY k.created_at DESC, k.id DESC LIMIT 1";
+
+    public static string? ReadActiveApiKey(string databasePath)
+    {
+        var handle = IntPtr.Zero;
+        var statement = IntPtr.Zero;
+        try
+        {
+            if (sqlite3_open_v2(Utf8(databasePath), out handle, OpenReadOnly, IntPtr.Zero) != Ok)
+                throw new InvalidDataException("The database could not be opened.");
+            sqlite3_busy_timeout(handle, 3000);
+            if (sqlite3_prepare_v2(handle, Utf8(Query), -1, out statement, IntPtr.Zero) != Ok)
+                throw new InvalidDataException("The database is not in the expected format.");
+            var step = sqlite3_step(statement);
+            if (step == Done) return null;
+            if (step != Row) throw new InvalidDataException("The database could not be read.");
+            var text = sqlite3_column_text(statement, 0);
+            return text == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(text, sqlite3_column_bytes(statement, 0));
+        }
+        finally
+        {
+            if (statement != IntPtr.Zero) sqlite3_finalize(statement);
+            if (handle != IntPtr.Zero) sqlite3_close_v2(handle);
+        }
+    }
+
+    private static byte[] Utf8(string text) => Encoding.UTF8.GetBytes(text + "\0");
+
+    [DllImport(Library)] private static extern int sqlite3_open_v2(byte[] filename, out IntPtr database, int flags, IntPtr vfs);
+    [DllImport(Library)] private static extern int sqlite3_busy_timeout(IntPtr database, int milliseconds);
+    [DllImport(Library)] private static extern int sqlite3_prepare_v2(IntPtr database, byte[] sql, int length, out IntPtr statement, IntPtr tail);
+    [DllImport(Library)] private static extern int sqlite3_step(IntPtr statement);
+    [DllImport(Library)] private static extern IntPtr sqlite3_column_text(IntPtr statement, int column);
+    [DllImport(Library)] private static extern int sqlite3_column_bytes(IntPtr statement, int column);
+    [DllImport(Library)] private static extern int sqlite3_finalize(IntPtr statement);
+    [DllImport(Library)] private static extern int sqlite3_close_v2(IntPtr database);
 }
