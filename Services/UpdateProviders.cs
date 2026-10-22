@@ -220,6 +220,8 @@ public sealed partial class UpdateProviders : IUpdateProvider
         var cache = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "MediaCenterUpdater", "Downloads");
         Directory.CreateDirectory(cache);
         var file = Path.Combine(cache, $"{id}-{Guid.NewGuid():N}.exe");
+        var stoppedService = false;
+        var installerRunning = false;
         try
         {
             await DownloadAsync(id, new Uri(update.DownloadUrl!), file, ct);
@@ -246,12 +248,21 @@ public sealed partial class UpdateProviders : IUpdateProvider
                     args.Add("/TASKS=" + string.Join(',', tasks));
                 }
             }
+            if (id == ApplicationId.Pulsarr && serviceRunning)
+            {
+                // Pulsarr's installer gives up with error 5 when its service is still shutting down,
+                // so stop the service and wait until Windows reports it stopped before running Setup.
+                stoppedService = true;
+                await StopServiceAsync(serviceName);
+            }
             // Once an installer starts it must finish even if the window closes or cancellation is requested.
             // A timeout reports uncertainty and deliberately does not kill a live installer.
             var pendingPath = PendingPath(id);
             Directory.CreateDirectory(Path.GetDirectoryName(pendingPath)!);
             await File.WriteAllTextAsync(pendingPath, JsonSerializer.Serialize(new PendingInstallation(update.AvailableVersion, file)), ct);
+            installerRunning = true;
             var exit = await RunProcessAsync(file, args, TimeSpan.FromMinutes(15), CancellationToken.None, false);
+            installerRunning = false;
             // A completed installer can be retried after a reported error. A timeout/exception leaves
             // the marker in place across application restarts until the new version is verified.
             File.Delete(pendingPath);
@@ -264,8 +275,7 @@ public sealed partial class UpdateProviders : IUpdateProvider
                 return update with { State = UpdateState.RestartRequired, InstalledVersion = after.Version, Message = "The new version is installed. Windows reports that a restart is required; no restart was performed." };
             if (serviceRunning && !ServiceRunning(serviceName))
             {
-                var result = await RunProcessAsync(Path.Combine(Environment.SystemDirectory, "sc.exe"), new[] { "start", serviceName }, TimeSpan.FromSeconds(30), CancellationToken.None, true);
-                if (result.ExitCode != 0 && result.ExitCode != 1056)
+                if (!await StartServiceAsync(serviceName))
                     return update with { State = UpdateState.Error, InstalledVersion = after.Version, Message = "The update installed, but its previously running Windows service could not be restarted." };
             }
             else if (running is not null && !IsExpectedProcessRunning(processName, after.Executable))
@@ -287,6 +297,13 @@ public sealed partial class UpdateProviders : IUpdateProvider
                     return update with { State = UpdateState.Error, InstalledVersion = after.Version, Message = "The new version installed, but the previously running application did not stay running." };
             }
             return update with { State = UpdateState.Updated, InstalledVersion = after.Version, Message = "The new installed version was verified. Previously running applications or services were restored." };
+        }
+        // A failed or cancelled update must not leave a service off that this updater stopped.
+        // Skip this while an installer may still be running (timeout), so the two never race.
+        catch (Exception ex) when (stoppedService && !installerRunning && !ServiceRunning(serviceName))
+        {
+            if (await StartServiceAsync(serviceName) || ex is OperationCanceledException) throw;
+            throw new ProviderException(Failure(id, ex).Message + $" Its Windows service could not be restarted. Start the {serviceName} service from Windows Services.");
         }
         finally
         {
@@ -536,19 +553,40 @@ public sealed partial class UpdateProviders : IUpdateProvider
     });
     private sealed class ProviderException(string message) : Exception(message) { }
     public static bool IsAdministrator() { using var identity = WindowsIdentity.GetCurrent(); return new WindowsPrincipal(identity).IsInRole(WindowsBuiltInRole.Administrator); }
-    private static bool ServiceRunning(string name)
+    private const int ServiceStopped = 1, ServiceRunningState = 4;
+    private static bool ServiceRunning(string name) => ServiceState(name) == ServiceRunningState;
+    /// <summary>The service's current SCM state, or null when it does not exist or cannot be queried.</summary>
+    private static int? ServiceState(string name)
     {
-        if (string.IsNullOrEmpty(name)) return false;
+        if (string.IsNullOrEmpty(name)) return null;
         var manager = OpenSCManager(null, null, 1);
-        if (manager == IntPtr.Zero) return false;
+        if (manager == IntPtr.Zero) return null;
         try
         {
             var service = OpenService(manager, name, 4);
-            if (service == IntPtr.Zero) return false;
-            try { return QueryServiceStatus(service, out var status) && status.CurrentState == 4; }
+            if (service == IntPtr.Zero) return null;
+            try { return QueryServiceStatus(service, out var status) ? (int)status.CurrentState : null; }
             finally { CloseServiceHandle(service); }
         }
         finally { CloseServiceHandle(manager); }
+    }
+
+    private static async Task StopServiceAsync(string name)
+    {
+        var result = await RunProcessAsync(Path.Combine(Environment.SystemDirectory, "sc.exe"), new[] { "stop", name }, TimeSpan.FromSeconds(30), CancellationToken.None, true);
+        // 1062 = the service was already stopped.
+        if (result.ExitCode != 0 && result.ExitCode != 1062)
+            throw new ProviderException($"The application's Windows service could not be stopped for the update (error {result.ExitCode}). Nothing was installed.");
+        for (var attempt = 0; attempt < 60 && ServiceState(name) != ServiceStopped; attempt++) await Task.Delay(1000);
+        if (ServiceState(name) != ServiceStopped)
+            throw new ProviderException("The application's Windows service did not finish stopping within a minute. Nothing was installed.");
+    }
+
+    private static async Task<bool> StartServiceAsync(string name)
+    {
+        var result = await RunProcessAsync(Path.Combine(Environment.SystemDirectory, "sc.exe"), new[] { "start", name }, TimeSpan.FromSeconds(30), CancellationToken.None, true);
+        // 1056 = the service is already running.
+        return result.ExitCode is 0 or 1056;
     }
     private static bool Is64BitExecutable(string path)
     {

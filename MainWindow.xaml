@@ -130,7 +130,14 @@
                                     <NumberBox x:Name="IntervalBox" Header="Hours between checks" Minimum="1" Maximum="168" SmallChange="1" LargeChange="6" SpinButtonPlacementMode="Compact" Width="185" ValueChanged="Interval_Changed" AutomationProperties.Name="Hours between checks" />
                                     <TimePicker x:Name="DailyTimePicker" Header="Local time" ClockIdentifier="12HourClock" TimeChanged="DailyTime_Changed" AutomationProperties.Name="Daily update time" />
                                 </StackPanel>
-                                <TextBlock x:Name="ScheduleDetailText" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                <Grid ColumnSpacing="12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock x:Name="ScheduleDetailText" VerticalAlignment="Center" Foreground="{ThemeResource TextFillColorSecondaryBrush}" TextWrapping="Wrap" />
+                                    <Button x:Name="ScheduleCheckNowButton" Grid.Column="1" Content="Check now" Click="Install_Click" ToolTipService.ToolTip="Run a scheduled check now: check monitored apps and install updates where Automatic install is on. The next scheduled check is not changed." />
+                                </Grid>
                                 <TextBlock Text="The app must be running for scheduled checks. Missed checks run when it is next available. Updates may briefly interrupt playback or downloads unless you turn on Wait while apps are in use below." Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" TextWrapping="Wrap" />
                             </StackPanel>
                         </Border>
