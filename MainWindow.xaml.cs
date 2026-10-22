@@ -209,6 +209,7 @@ public sealed partial class MainWindow : Window
         bool connectionControlsEnabled = !busy && !_retrievingKeys;
         CheckButton.IsEnabled = connectionControlsEnabled;
         InstallButton.IsEnabled = connectionControlsEnabled;
+        ScheduleCheckNowButton.IsEnabled = connectionControlsEnabled;
         BusyRing.IsActive = busy;
         BusyRing.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         SaveConnectionsButton.IsEnabled = connectionControlsEnabled;
