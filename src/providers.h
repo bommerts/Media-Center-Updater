@@ -18,6 +18,12 @@ typedef struct Providers
 void providers_init(Providers *providers, HttpSendFn send, void *send_context);   /* send NULL: real requests */
 UpdateProvider providers_interface(Providers *providers);
 
+/* How many installation logs are kept for each app, and for this app's own setup program. Pulsarr's installer
+   writes several megabytes on every update, so keeping them all fills the data folder. */
+#define INSTALLER_LOGS_KEPT 3
+/* Removes old installation logs and any installer left behind in the data folder's Downloads folder. */
+void providers_prune_downloads(const wchar_t *data_directory);
+
 typedef struct Version { int part[4]; } Version;
 /* Accepts "1.2", "v1.2.3", "1.2.3.4-beta" and similar. Missing parts count as zero. */
 bool version_parse(const wchar_t *text, Version *out);

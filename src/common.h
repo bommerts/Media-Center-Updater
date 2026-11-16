@@ -69,6 +69,9 @@ bool file_append(const wchar_t *path, const void *data, size_t length);
 bool file_exists(const wchar_t *path);
 bool dir_exists(const wchar_t *path);
 bool dir_create(const wchar_t *path);
+/* Deletes the files in `folder` whose names match `pattern` ("*" and "?" allowed), except the `keep` newest and any
+   changed in the last `min_age_hours`. A file that is in use stays. Returns how many were deleted. */
+int files_prune(const wchar_t *folder, const wchar_t *pattern, int keep, int min_age_hours);
 void path_join(wchar_t *dst, size_t cap, const wchar_t *a, const wchar_t *b);
 void path_dirname(wchar_t *dst, size_t cap, const wchar_t *path);
 const wchar_t *path_filename(const wchar_t *path);

@@ -106,7 +106,8 @@ static bool parse_settings(const JsonValue *root, AppSettings *settings, bool *k
 {
     if (!root || root->kind != JSON_OBJECT) return false;
     bool bad = false;
-    int mode = 0, unit = INTERVAL_HOURS, hours = 0;
+    int mode = 0, unit = INTERVAL_HOURS, hours = 0, app_mode = 0, app_unit = INTERVAL_DAYS;
+    ScheduleTiming *schedule = &settings->schedule, *app_timing = &settings->app_update_timing;
     settings_defaults(settings);
     read_int(root, L"SettingsVersion", &settings->settings_version, &bad);
     read_string(root, L"Theme", settings->theme, COUNTOF(settings->theme), &bad);
@@ -117,21 +118,28 @@ static bool parse_settings(const JsonValue *root, AppSettings *settings, bool *k
     /* Earlier versions saved the interval as whole hours, from 1 to 168. */
     if (json_get(root, L"IntervalMinutes"))
     {
-        read_int(root, L"IntervalMinutes", &settings->interval_minutes, &bad);
+        read_int(root, L"IntervalMinutes", &schedule->interval_minutes, &bad);
         read_int(root, L"IntervalUnit", &unit, &bad);
     }
     else if (json_get(root, L"IntervalHours"))
     {
         read_int(root, L"IntervalHours", &hours, &bad);
-        settings->interval_minutes = clamp(hours, 1, 168) * 60;
+        schedule->interval_minutes = clamp(hours, 1, 168) * 60;
     }
-    read_int(root, L"DailyHour", &settings->daily_hour, &bad);
-    read_int(root, L"DailyMinute", &settings->daily_minute, &bad);
-    read_int(root, L"DailyDays", &settings->daily_days, &bad);
+    read_int(root, L"DailyHour", &schedule->daily_hour, &bad);
+    read_int(root, L"DailyMinute", &schedule->daily_minute, &bad);
+    read_int(root, L"DailyDays", &schedule->daily_days, &bad);
     read_time(root, L"LastScheduledRun", &settings->last_scheduled_run, &bad);
     read_time(root, L"NextRun", &settings->next_run, &bad);
     read_bool(root, L"AppUpdateCheck", &settings->app_update_check, &bad);
     read_bool(root, L"AppUpdateInstall", &settings->app_update_install, &bad);
+    /* Versions before 0.4.3 always checked once a day, which is still the default. */
+    read_int(root, L"AppUpdateMode", &app_mode, &bad);
+    read_int(root, L"AppUpdateIntervalMinutes", &app_timing->interval_minutes, &bad);
+    read_int(root, L"AppUpdateIntervalUnit", &app_unit, &bad);
+    read_int(root, L"AppUpdateHour", &app_timing->daily_hour, &bad);
+    read_int(root, L"AppUpdateMinute", &app_timing->daily_minute, &bad);
+    read_int(root, L"AppUpdateDays", &app_timing->daily_days, &bad);
     read_time(root, L"LastAppUpdateCheck", &settings->last_app_update_check, &bad);
 
     /* Keep the saved order, drop unknown or repeated apps, then add any that are missing. */
@@ -173,9 +181,12 @@ static bool parse_settings(const JsonValue *root, AppSettings *settings, bool *k
     }
     if (bad) return false;
 
-    settings->schedule_mode = mode == SCHEDULE_DAILY ? SCHEDULE_DAILY : SCHEDULE_INTERVAL;
-    settings->interval_unit = unit >= 0 && unit < INTERVAL_UNIT_COUNT ? (IntervalUnit)unit : INTERVAL_HOURS;
-    settings_normalize_schedule(settings);
+    schedule->mode = mode == SCHEDULE_DAILY ? SCHEDULE_DAILY : SCHEDULE_INTERVAL;
+    schedule->interval_unit = unit >= 0 && unit < INTERVAL_UNIT_COUNT ? (IntervalUnit)unit : INTERVAL_HOURS;
+    timing_normalize(schedule);
+    app_timing->mode = app_mode == SCHEDULE_DAILY ? SCHEDULE_DAILY : SCHEDULE_INTERVAL;
+    app_timing->interval_unit = app_unit >= 0 && app_unit < INTERVAL_UNIT_COUNT ? (IntervalUnit)app_unit : INTERVAL_HOURS;
+    timing_normalize(app_timing);
     if (wcscmp(settings->theme, L"Dark") != 0 && wcscmp(settings->theme, L"Light") != 0 && wcscmp(settings->theme, L"System") != 0)
         str_copy(settings->theme, COUNTOF(settings->theme), L"Dark");
     /* Version 0.3.0 saved "wait while in use" as off. It is now on by default so updates never interrupt an app. */
@@ -245,12 +256,16 @@ bool store_save(SettingsStore *store, const AppSettings *settings, wchar_t *erro
         L"  \"ScheduleMode\": %d,\n  \"IntervalMinutes\": %d,\n  \"IntervalUnit\": %d,\n  \"DailyHour\": %d,\n  \"DailyMinute\": %d,\n"
         L"  \"DailyDays\": %d,\n",
         bool_text(settings->minimize_to_tray), bool_text(settings->start_minimized), bool_text(settings->schedule_enabled),
-        (int)settings->schedule_mode, settings->interval_minutes, (int)settings->interval_unit, settings->daily_hour,
-        settings->daily_minute, settings->daily_days);
+        (int)settings->schedule.mode, settings->schedule.interval_minutes, (int)settings->schedule.interval_unit,
+        settings->schedule.daily_hour, settings->schedule.daily_minute, settings->schedule.daily_days);
     write_time(&sb, L"LastScheduledRun", &settings->last_scheduled_run);
     write_time(&sb, L"NextRun", &settings->next_run);
-    sb_appendf(&sb, L"  \"AppUpdateCheck\": %s,\n  \"AppUpdateInstall\": %s,\n",
-        bool_text(settings->app_update_check), bool_text(settings->app_update_install));
+    sb_appendf(&sb, L"  \"AppUpdateCheck\": %s,\n  \"AppUpdateInstall\": %s,\n  \"AppUpdateMode\": %d,\n"
+        L"  \"AppUpdateIntervalMinutes\": %d,\n  \"AppUpdateIntervalUnit\": %d,\n  \"AppUpdateHour\": %d,\n"
+        L"  \"AppUpdateMinute\": %d,\n  \"AppUpdateDays\": %d,\n",
+        bool_text(settings->app_update_check), bool_text(settings->app_update_install), (int)settings->app_update_timing.mode,
+        settings->app_update_timing.interval_minutes, (int)settings->app_update_timing.interval_unit,
+        settings->app_update_timing.daily_hour, settings->app_update_timing.daily_minute, settings->app_update_timing.daily_days);
     write_time(&sb, L"LastAppUpdateCheck", &settings->last_app_update_check);
     sb_append(&sb, L"  \"Programs\": [");
     for (int i = 0; i < settings->program_count && ok; i++)

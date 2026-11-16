@@ -27,6 +27,8 @@ bool self_update_is_allowed_download(const wchar_t *url);
 /* Downloads the setup program and checks it against the release checksum. `file` receives its path. */
 bool self_update_download(HttpSendFn send, void *send_context, const SelfUpdateInfo *info, const wchar_t *data_directory,
     wchar_t *file, size_t file_cap, wchar_t *error, size_t error_cap);
+/* Removes old setup logs and a setup program left behind in the data folder's AppUpdates folder. */
+void self_update_prune(const wchar_t *data_directory);
 /* Starts a hidden helper that waits for this process to exit, checks the file again, then runs the setup
    program silently. The caller must exit right after this returns, because the setup program will not
    replace a running copy. The setup program reopens the app when it finishes. */

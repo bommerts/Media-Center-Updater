@@ -20,26 +20,26 @@ bool coordinator_is_busy(const Coordinator *coordinator) { return coordinator->b
 bool coordinator_recalculate_schedule(Coordinator *coordinator, wchar_t *error, size_t error_cap)
 {
     AppSettings *settings = coordinator->settings;
-    if (settings->schedule_enabled) settings->next_run = coordinator_compute_next_run(settings, dto_now());
+    if (settings->schedule_enabled) settings->next_run = coordinator_compute_next_run(&settings->schedule, dto_now());
     else settings->next_run.has = false;
     return store_save(coordinator->store, settings, error, error_cap);
 }
 
-DateTimeOffset coordinator_compute_next_run(const AppSettings *settings, DateTimeOffset now)
+DateTimeOffset coordinator_compute_next_run(const ScheduleTiming *timing, DateTimeOffset now)
 {
-    if (settings->schedule_mode == SCHEDULE_INTERVAL)
+    if (timing->mode == SCHEDULE_INTERVAL)
         return dto_from_ticks(now.ticks +
-            clamp(settings->interval_minutes, INTERVAL_MIN_MINUTES, INTERVAL_MAX_MINUTES) * TICKS_PER_MINUTE);
+            clamp(timing->interval_minutes, INTERVAL_MIN_MINUTES, INTERVAL_MAX_MINUTES) * TICKS_PER_MINUTE);
 
     SYSTEMTIME local;
     time_to_local(now.ticks, &local);
     int64_t local_now = time_from_parts(&local);
-    local.wHour = (WORD)clamp(settings->daily_hour, 0, 23);
-    local.wMinute = (WORD)clamp(settings->daily_minute, 0, 59);
+    local.wHour = (WORD)clamp(timing->daily_hour, 0, 23);
+    local.wMinute = (WORD)clamp(timing->daily_minute, 0, 59);
     local.wSecond = local.wMilliseconds = 0;
     int64_t candidate = time_from_parts(&local);
     if (candidate <= local_now) candidate += TICKS_PER_DAY;
-    int days = settings->daily_days & ALL_DAYS;
+    int days = timing->daily_days & ALL_DAYS;
     if (!days) days = ALL_DAYS;
 
     /* Far enough ahead to reach a single chosen day a week away. */
@@ -222,7 +222,7 @@ ScheduleCheck coordinator_schedule_due(Coordinator *coordinator, wchar_t *error,
     if (settings->next_run.ticks > now.ticks) return SCHEDULE_NOT_DUE;
     /* Persist the next due time before running. */
     settings->last_scheduled_run = now;
-    settings->next_run = coordinator_compute_next_run(settings, now);
+    settings->next_run = coordinator_compute_next_run(&settings->schedule, now);
     return store_save(coordinator->store, settings, error, error_cap) ? SCHEDULE_DUE : SCHEDULE_SAVE_FAILED;
 }
 

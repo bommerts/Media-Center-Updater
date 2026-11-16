@@ -34,7 +34,8 @@ typedef enum { SCHEDULE_NOT_DUE, SCHEDULE_DUE, SCHEDULE_SAVE_FAILED } ScheduleCh
 void coordinator_init(Coordinator *coordinator, AppSettings *settings, SettingsStore *store, UpdateProvider provider);
 bool coordinator_is_busy(const Coordinator *coordinator);
 bool coordinator_recalculate_schedule(Coordinator *coordinator, wchar_t *error, size_t error_cap);
-DateTimeOffset coordinator_compute_next_run(const AppSettings *settings, DateTimeOffset now);
+/* The first time after `now` that the timing comes round. */
+DateTimeOffset coordinator_compute_next_run(const ScheduleTiming *timing, DateTimeOffset now);
 
 /* A run in two steps, so the snapshot is taken on the thread that owns the settings.
    coordinator_begin returns false when a run is already under way. */

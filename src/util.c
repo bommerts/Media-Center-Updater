@@ -309,6 +309,48 @@ bool dir_create(const wchar_t *path)
     return result == ERROR_SUCCESS || result == ERROR_ALREADY_EXISTS || result == ERROR_FILE_EXISTS;
 }
 
+typedef struct PruneFile { wchar_t name[MAX_PATH]; int64_t written; } PruneFile;
+
+static int newest_first(const void *a, const void *b)
+{
+    int64_t first = ((const PruneFile *)a)->written, second = ((const PruneFile *)b)->written;
+    return first > second ? -1 : first < second;
+}
+
+int files_prune(const wchar_t *folder, const wchar_t *pattern, int keep, int min_age_hours)
+{
+    wchar_t path[PATHN];
+    WIN32_FIND_DATAW found;
+    PruneFile *files = NULL;
+    int count = 0, capacity = 0, deleted = 0;
+    path_join(path, COUNTOF(path), folder, pattern);
+    HANDLE search = FindFirstFileW(path, &found);
+    if (search == INVALID_HANDLE_VALUE) return 0;
+    do
+    {
+        if (found.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) continue;
+        if (count == capacity)
+        {
+            capacity = capacity ? capacity * 2 : 32;
+            files = xrealloc(files, sizeof(PruneFile) * capacity);
+        }
+        str_copy(files[count].name, MAX_PATH, found.cFileName);
+        files[count++].written = ((int64_t)found.ftLastWriteTime.dwHighDateTime << 32) | found.ftLastWriteTime.dwLowDateTime;
+    } while (FindNextFileW(search, &found));
+    FindClose(search);
+
+    if (count > keep) qsort(files, (size_t)count, sizeof(PruneFile), newest_first);
+    int64_t newest_allowed = time_now() - min_age_hours * TICKS_PER_HOUR;
+    for (int i = keep < 0 ? 0 : keep; i < count; i++)
+    {
+        if (files[i].written > newest_allowed) continue;
+        path_join(path, COUNTOF(path), folder, files[i].name);
+        if (DeleteFileW(path)) deleted++;
+    }
+    free(files);
+    return deleted;
+}
+
 void path_join(wchar_t *dst, size_t cap, const wchar_t *a, const wchar_t *b)
 {
     wchar_t joined[PATHN];

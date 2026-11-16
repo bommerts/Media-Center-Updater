@@ -200,6 +200,15 @@ bool self_update_download(HttpSendFn send, void *send_context, const SelfUpdateI
     return ok;
 }
 
+void self_update_prune(const wchar_t *data_directory)
+{
+    wchar_t folder[PATHN];
+    path_join(folder, COUNTOF(folder), data_directory, L"AppUpdates");
+    /* The setup program that installed this version is still needed for a moment after the app reopens. */
+    files_prune(folder, L"*.exe", 0, 24);
+    files_prune(folder, L"*.log", INSTALLER_LOGS_KEPT, 0);
+}
+
 /* A PowerShell single-quoted string. */
 static void append_quoted(StrBuf *script, const wchar_t *value)
 {

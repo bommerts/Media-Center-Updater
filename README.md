@@ -2,7 +2,7 @@
 
 <h1 align="center">Media Center Updater</h1>
 
-<p align="center"><strong>Current version: 0.4.2</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
+<p align="center"><strong>Current version: 0.4.3</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
 
 A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
 
@@ -71,7 +71,8 @@ The updater only runs while someone is signed in to the media server. If your se
 
 If you installed with the setup program, the updater can update itself. In **Settings > Auto-update**:
 
-- **Check for new versions** (on by default) checks GitHub when the app starts and once a day, and tells you when a new version is out. Choose **Install version …** to install it.
+- **Check for new versions** (on by default) checks GitHub when the app starts and then as often as you choose, and tells you when a new version is out. Choose **Install version …** to install it.
+- **When to check** sets how often that happens: **At regular intervals** (every so many minutes, hours or days, from 15 minutes to 30 days; once a day unless you change it) or **At a set time** on the days of the week you check. The next automatic check is shown underneath.
 - **Install new versions automatically** (off by default) installs new versions without asking. It waits until no app updates are running, then closes, installs, and reopens the updater where it was (window or notification area).
 
 Every download is checked against the SHA-256 checksum published with the GitHub release before it runs. Copies you built yourself can check for new versions, but install them by hand.
@@ -125,7 +126,7 @@ If an installer times out, it's left running and automatic retries for that appl
 
 ## Data
 
-Settings, recent activity, installer logs, and crash reports are stored in `%LOCALAPPDATA%\MediaCenterUpdater` for the Windows user running the updater. **Open log folder** opens it. Activity logs rotate at about 2 MB. Invalid settings or unreadable encrypted keys turn off the schedule until fixed.
+Settings, recent activity, installer logs, and crash reports are stored in `%LOCALAPPDATA%\MediaCenterUpdater` for the Windows user running the updater. **Open log folder** opens it. Activity logs rotate at about 2 MB. The newest three installer logs are kept for each app and for the updater's own setup program; older ones, and any installer left behind for more than a day, are removed when the updater starts and after each install. Invalid settings or unreadable encrypted keys turn off the schedule until fixed.
 
 ## Building
 
@@ -156,7 +157,7 @@ It lands in `build\dev`, starts without an administrator prompt, and can run nex
 
 ### Tests
 
-`Tests\tests.c` covers schedule recovery, daylight-saving time, non-overlapping runs, per-program switches, encrypted settings, reading settings saved by earlier versions, failure isolation, URL credentials, version comparisons, and Radarr/Sonarr container detection. The tests use simulated providers and HTTP responses and never install real updates. `Publish.ps1` runs them on every build; add `-SkipTests` to skip them.
+`Tests\tests.c` covers schedule recovery, daylight-saving time, non-overlapping runs, per-program switches, encrypted settings, reading settings saved by earlier versions, cleaning up old installer logs, failure isolation, URL credentials, version comparisons, and Radarr/Sonarr container detection. The tests use simulated providers and HTTP responses and never install real updates. `Publish.ps1` runs them on every build; add `-SkipTests` to skip them.
 
 The test program can also look at the PC it runs on without changing anything: `tests.exe --inspect-local` checks each app for updates, `--inspect-usage` asks whether each app is busy, `--inspect-pulsarr-key` looks for Pulsarr's API key (it never prints the key), and `--inspect-self-update 0.1.0` finds, downloads and verifies this app's latest release as if version 0.1.0 were installed, without running it.
 

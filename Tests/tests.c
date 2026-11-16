@@ -432,31 +432,43 @@ static void test_settings(void)
     SYSTEMTIME next;
     time_to_parts(loaded->next_run.ticks, &next);
     check(!upgrade.load_warning[0] && wcscmp(loaded->theme, L"Light") == 0 && !loaded->minimize_to_tray && loaded->start_minimized &&
-        loaded->schedule_enabled && loaded->schedule_mode == SCHEDULE_DAILY && loaded->interval_minutes == 12 * 60 &&
-        loaded->interval_unit == INTERVAL_HOURS && loaded->daily_days == ALL_DAYS &&
-        loaded->daily_hour == 4 && loaded->daily_minute == 45 && !loaded->last_scheduled_run.has && loaded->next_run.has &&
+        loaded->schedule_enabled && loaded->schedule.mode == SCHEDULE_DAILY && loaded->schedule.interval_minutes == 12 * 60 &&
+        loaded->schedule.interval_unit == INTERVAL_HOURS && loaded->schedule.daily_days == ALL_DAYS &&
+        loaded->schedule.daily_hour == 4 && loaded->schedule.daily_minute == 45 && !loaded->last_scheduled_run.has && loaded->next_run.has &&
         next.wDay == 16 && next.wHour == 10 && next.wMinute == 45 && loaded->next_run.offset_minutes == -360 &&
         !loaded->app_update_check && loaded->app_update_install && loaded->last_app_update_check.has &&
+        loaded->app_update_timing.mode == SCHEDULE_INTERVAL && loaded->app_update_timing.interval_minutes == 24 * 60 &&
+        loaded->app_update_timing.interval_unit == INTERVAL_DAYS &&
         loaded->program_count == APP_COUNT && loaded->programs[0].id == APP_RADARR && !loaded->programs[0].enabled &&
         !loaded->programs[0].auto_install && !loaded->programs[0].wait_while_in_use &&
         wcscmp(loaded->programs[0].server_url, L"http://localhost:7878/radarr") == 0,
         L"Settings saved by the earlier .NET version load unchanged");
 
-    loaded->schedule_mode = SCHEDULE_INTERVAL;
-    loaded->interval_minutes = 45;
-    loaded->interval_unit = INTERVAL_MINUTES;
-    loaded->daily_days = (1 << 1) | (1 << 5);
+    loaded->schedule.mode = SCHEDULE_INTERVAL;
+    loaded->schedule.interval_minutes = 45;
+    loaded->schedule.interval_unit = INTERVAL_MINUTES;
+    loaded->schedule.daily_days = (1 << 1) | (1 << 5);
+    loaded->app_update_timing.mode = SCHEDULE_DAILY;
+    loaded->app_update_timing.interval_minutes = 7 * 24 * 60;
+    loaded->app_update_timing.daily_hour = 21;
+    loaded->app_update_timing.daily_minute = 5;
+    loaded->app_update_timing.daily_days = 1 << 0;
     store_save(&upgrade, loaded, error, COUNTOF(error));
     store_load(&upgrade, loaded);
-    check(loaded->interval_minutes == 45 && loaded->interval_unit == INTERVAL_MINUTES && loaded->daily_days == ((1 << 1) | (1 << 5)),
+    check(loaded->schedule.interval_minutes == 45 && loaded->schedule.interval_unit == INTERVAL_MINUTES && loaded->schedule.daily_days == ((1 << 1) | (1 << 5)),
         L"An interval in minutes and chosen days of the week are saved and read back");
+    check(loaded->app_update_timing.mode == SCHEDULE_DAILY && loaded->app_update_timing.interval_minutes == 7 * 24 * 60 &&
+        loaded->app_update_timing.interval_unit == INTERVAL_DAYS && loaded->app_update_timing.daily_hour == 21 &&
+        loaded->app_update_timing.daily_minute == 5 && loaded->app_update_timing.daily_days == 1 << 0 &&
+        loaded->schedule.mode == SCHEDULE_INTERVAL,
+        L"The timing of checks for a new app version is saved and read back, apart from the update schedule");
     write_text(path, "{\"IntervalMinutes\":90,\"IntervalUnit\":1,\"DailyDays\":0}");
     store_load(&upgrade, loaded);
-    check(loaded->interval_minutes == 90 && loaded->interval_unit == INTERVAL_MINUTES && loaded->daily_days == ALL_DAYS,
+    check(loaded->schedule.interval_minutes == 90 && loaded->schedule.interval_unit == INTERVAL_MINUTES && loaded->schedule.daily_days == ALL_DAYS,
         L"An interval that is not whole hours is shown in minutes, and a schedule with no days runs every day");
     write_text(path, "{\"IntervalMinutes\":1,\"IntervalUnit\":9}");
     store_load(&upgrade, loaded);
-    check(loaded->interval_minutes == INTERVAL_MIN_MINUTES && interval_from_unit(0, INTERVAL_HOURS) == 60 &&
+    check(loaded->schedule.interval_minutes == INTERVAL_MIN_MINUTES && interval_from_unit(0, INTERVAL_HOURS) == 60 &&
         interval_from_unit(1000, INTERVAL_DAYS) == INTERVAL_MAX_MINUTES && interval_from_unit(3, INTERVAL_MINUTES) == INTERVAL_MIN_MINUTES,
         L"Intervals stay between 15 minutes and 30 days");
 
@@ -529,7 +541,7 @@ static void test_coordinator(void)
     check(fake.usage_count == 0, L"Check-only scans never ask whether apps are busy");
 
     settings->schedule_enabled = true;
-    settings->schedule_mode = SCHEDULE_DAILY;
+    settings->schedule.mode = SCHEDULE_DAILY;
     settings->next_run = dto_from_ticks(time_now() - TICKS_PER_MINUTE);
     make_store(&store, L"retry");
     coordinator_init(&coordinator, settings, &store, fake_provider(&fake));
@@ -569,7 +581,7 @@ static void test_coordinator(void)
 
     only(settings, 1, plex_only);
     settings->schedule_enabled = true;
-    settings->interval_minutes = 6 * 60;
+    settings->schedule.interval_minutes = 6 * 60;
     settings->next_run = dto_from_ticks(time_now() - 3 * TICKS_PER_DAY);
     make_store(&store, L"schedule");
     coordinator_init(&coordinator, settings, &store, fake_provider(&fake));
@@ -585,35 +597,35 @@ static void test_coordinator(void)
 
     SYSTEMTIME parts = { 2026, 9, 0, 11, 16, 0, 0, 0 }, local;
     DateTimeOffset now = { true, time_from_parts(&parts), 0 };
-    settings->interval_minutes = 45;
-    DateTimeOffset next = coordinator_compute_next_run(settings, now);
+    settings->schedule.interval_minutes = 45;
+    DateTimeOffset next = coordinator_compute_next_run(&settings->schedule, now);
     check(next.ticks - now.ticks == 45 * TICKS_PER_MINUTE, L"An interval can be shorter than an hour");
-    settings->interval_minutes = 3 * 24 * 60;
-    check(coordinator_compute_next_run(settings, now).ticks - now.ticks == 3 * TICKS_PER_DAY, L"An interval can be several days");
+    settings->schedule.interval_minutes = 3 * 24 * 60;
+    check(coordinator_compute_next_run(&settings->schedule, now).ticks - now.ticks == 3 * TICKS_PER_DAY, L"An interval can be several days");
 
-    settings->schedule_mode = SCHEDULE_DAILY;
-    settings->daily_hour = 3;
-    settings->daily_minute = 15;
-    next = coordinator_compute_next_run(settings, now);
+    settings->schedule.mode = SCHEDULE_DAILY;
+    settings->schedule.daily_hour = 3;
+    settings->schedule.daily_minute = 15;
+    next = coordinator_compute_next_run(&settings->schedule, now);
     time_to_local(next.ticks, &local);
     check(next.ticks > now.ticks && next.ticks - now.ticks <= 25 * TICKS_PER_HOUR && local.wHour == 3 && local.wMinute == 15,
         L"Daily schedule uses the next occurrence in local time");
-    settings->daily_hour = 1;
-    settings->daily_minute = 30;
+    settings->schedule.daily_hour = 1;
+    settings->schedule.daily_minute = 30;
     SYSTEMTIME repeated = { 2026, 11, 0, 1, 6, 15, 0, 0 };      /* 1:15 at UTC-5, inside the repeated hour in North America */
     now.ticks = time_from_parts(&repeated);
-    check(coordinator_compute_next_run(settings, now).ticks > now.ticks, L"Repeated daylight-saving hour cannot produce a past next-run time");
+    check(coordinator_compute_next_run(&settings->schedule, now).ticks > now.ticks, L"Repeated daylight-saving hour cannot produce a past next-run time");
     /* Every minute across two years, a day at a time, must give a later time that lands on the requested minute. */
     bool consistent = true;
     for (int day = 0; day < 730 && consistent; day++)
     {
         for (int hour = 0; hour < 24 && consistent; hour += 1)
         {
-            settings->daily_hour = hour;
-            settings->daily_minute = 30;
+            settings->schedule.daily_hour = hour;
+            settings->schedule.daily_minute = 30;
             SYSTEMTIME start = { 2026, 1, 0, 1, 0, 0, 0, 0 };
             now.ticks = time_from_parts(&start) + day * TICKS_PER_DAY + 17 * TICKS_PER_MINUTE;
-            next = coordinator_compute_next_run(settings, now);
+            next = coordinator_compute_next_run(&settings->schedule, now);
             consistent = next.ticks > now.ticks && next.ticks - now.ticks <= 25 * TICKS_PER_HOUR + TICKS_PER_MINUTE;
         }
     }
@@ -621,28 +633,28 @@ static void test_coordinator(void)
 
     /* Chosen days: every start day across two years, for each single day and for a weekend pair. */
     static const int day_sets[] = { 1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, (1 << 0) | (1 << 6) };
-    settings->daily_hour = 3;
+    settings->schedule.daily_hour = 3;
     consistent = true;
     for (int set = 0; set < (int)COUNTOF(day_sets) && consistent; set++)
     {
-        settings->daily_days = day_sets[set];
+        settings->schedule.daily_days = day_sets[set];
         int64_t longest = (day_sets[set] == ((1 << 0) | (1 << 6)) ? 6 : 7) * TICKS_PER_DAY + 2 * TICKS_PER_HOUR;
         for (int day = 0; day < 730 && consistent; day++)
         {
             SYSTEMTIME start = { 2026, 1, 0, 1, 0, 0, 0, 0 };
             now.ticks = time_from_parts(&start) + day * TICKS_PER_DAY + 17 * TICKS_PER_MINUTE;
-            next = coordinator_compute_next_run(settings, now);
+            next = coordinator_compute_next_run(&settings->schedule, now);
             time_to_local(next.ticks, &local);
             consistent = next.ticks > now.ticks && next.ticks - now.ticks <= longest && (day_sets[set] & (1 << local.wDayOfWeek)) &&
                 local.wMinute == 30;
         }
     }
     check(consistent, L"A schedule for chosen days of the week only runs on those days, at the requested time");
-    settings->daily_days = 0;
+    settings->schedule.daily_days = 0;
     SYSTEMTIME anytime = { 2026, 6, 0, 10, 12, 0, 0, 0 };
     now.ticks = time_from_parts(&anytime);
-    check(coordinator_compute_next_run(settings, now).ticks - now.ticks <= 25 * TICKS_PER_HOUR, L"A schedule with no days chosen still runs daily");
-    settings->daily_days = ALL_DAYS;
+    check(coordinator_compute_next_run(&settings->schedule, now).ticks - now.ticks <= 25 * TICKS_PER_HOUR, L"A schedule with no days chosen still runs daily");
+    settings->schedule.daily_days = ALL_DAYS;
 
     Version version;
     check(version_parse(L"v1.2.3", &version) && version.part[0] == 1 && version.part[1] == 2 && version.part[2] == 3 && version.part[3] == 0,
@@ -942,6 +954,70 @@ static void test_self_update(void)
     free(defaults);
 }
 
+/* A small file last changed some hours ago. */
+static void write_aged(const wchar_t *folder, const wchar_t *name, int hours_old)
+{
+    wchar_t path[PATHN];
+    int64_t ticks = time_now() - hours_old * TICKS_PER_HOUR;
+    FILETIME changed = { (DWORD)ticks, (DWORD)(ticks >> 32) };
+    sub_path(path, COUNTOF(path), folder, name);
+    write_text(path, "log");
+    HANDLE file = CreateFileW(path, FILE_WRITE_ATTRIBUTES, 0, NULL, OPEN_EXISTING, 0, NULL);
+    SetFileTime(file, NULL, NULL, &changed);
+    CloseHandle(file);
+}
+
+static bool has_file(const wchar_t *folder, const wchar_t *name)
+{
+    wchar_t path[PATHN];
+    sub_path(path, COUNTOF(path), folder, name);
+    return file_exists(path);
+}
+
+static void test_cleanup(void)
+{
+    wchar_t data[PATHN], downloads[PATHN], updates[PATHN];
+    sub_path(data, COUNTOF(data), directory, L"cleanup");
+    sub_path(downloads, COUNTOF(downloads), data, L"Downloads");
+    sub_path(updates, COUNTOF(updates), data, L"AppUpdates");
+    providers_prune_downloads(data);
+    self_update_prune(data);
+    check(!dir_exists(downloads) && !dir_exists(updates), L"Cleaning up a data folder that has no downloads yet does nothing");
+
+    dir_create(downloads);
+    dir_create(updates);
+    write_aged(downloads, L"Pulsarr-a.log", 500);
+    write_aged(downloads, L"Pulsarr-b.log", 400);
+    write_aged(downloads, L"Pulsarr-c.log", 300);
+    write_aged(downloads, L"Pulsarr-d.log", 200);
+    write_aged(downloads, L"Pulsarr-e.log", 1);
+    write_aged(downloads, L"Plex-a.log", 900);
+    write_aged(downloads, L"Plex-b.log", 800);
+    write_aged(downloads, L"Pulsarr-old.exe", 48);
+    write_aged(downloads, L"Pulsarr-new.exe", 1);
+    write_aged(downloads, L"notes.txt", 900);
+    providers_prune_downloads(data);
+    check(!has_file(downloads, L"Pulsarr-a.log") && !has_file(downloads, L"Pulsarr-b.log") && has_file(downloads, L"Pulsarr-c.log") &&
+        has_file(downloads, L"Pulsarr-d.log") && has_file(downloads, L"Pulsarr-e.log"),
+        L"Only the newest three installation logs of an app are kept");
+    check(has_file(downloads, L"Plex-a.log") && has_file(downloads, L"Plex-b.log") && has_file(downloads, L"notes.txt"),
+        L"Each app keeps its own installation logs, and other files are left alone");
+    check(!has_file(downloads, L"Pulsarr-old.exe") && has_file(downloads, L"Pulsarr-new.exe"),
+        L"An installer left behind is removed after a day, and a recent one is kept in case it is still running");
+
+    write_aged(updates, L"MediaCenterUpdater-0.3.0-Setup.log", 900);
+    write_aged(updates, L"MediaCenterUpdater-0.3.1-Setup.log", 800);
+    write_aged(updates, L"MediaCenterUpdater-0.4.0-Setup.log", 700);
+    write_aged(updates, L"MediaCenterUpdater-0.4.1-Setup.log", 600);
+    write_aged(updates, L"MediaCenterUpdater-0.4.0-Setup.exe", 600);
+    write_aged(updates, L"MediaCenterUpdater-0.4.1-Setup.exe", 0);
+    self_update_prune(data);
+    check(!has_file(updates, L"MediaCenterUpdater-0.3.0-Setup.log") && has_file(updates, L"MediaCenterUpdater-0.3.1-Setup.log") &&
+        has_file(updates, L"MediaCenterUpdater-0.4.1-Setup.log") && !has_file(updates, L"MediaCenterUpdater-0.4.0-Setup.exe") &&
+        has_file(updates, L"MediaCenterUpdater-0.4.1-Setup.exe"),
+        L"This app's own setup logs and setup programs are cleaned up the same way");
+}
+
 int wmain(int argc, wchar_t **argv)
 {
     SetConsoleOutputCP(CP_UTF8);
@@ -968,6 +1044,7 @@ int wmain(int argc, wchar_t **argv)
     test_discovery();
     test_usage();
     test_self_update();
+    test_cleanup();
     print(L"All %d assertions passed. No real updates were installed.", passed);
     remove_tree(directory);
     return 0;
