@@ -28,7 +28,8 @@ bool coordinator_recalculate_schedule(Coordinator *coordinator, wchar_t *error, 
 DateTimeOffset coordinator_compute_next_run(const AppSettings *settings, DateTimeOffset now)
 {
     if (settings->schedule_mode == SCHEDULE_INTERVAL)
-        return dto_from_ticks(now.ticks + clamp(settings->interval_hours, 1, 168) * TICKS_PER_HOUR);
+        return dto_from_ticks(now.ticks +
+            clamp(settings->interval_minutes, INTERVAL_MIN_MINUTES, INTERVAL_MAX_MINUTES) * TICKS_PER_MINUTE);
 
     SYSTEMTIME local;
     time_to_local(now.ticks, &local);
@@ -38,24 +39,26 @@ DateTimeOffset coordinator_compute_next_run(const AppSettings *settings, DateTim
     local.wSecond = local.wMilliseconds = 0;
     int64_t candidate = time_from_parts(&local);
     if (candidate <= local_now) candidate += TICKS_PER_DAY;
+    int days = settings->daily_days & ALL_DAYS;
+    if (!days) days = ALL_DAYS;
 
-    for (int day = 0; day < 3; day++)
+    /* Far enough ahead to reach a single chosen day a week away. */
+    for (int day = 0; day < 9; day++, candidate += TICKS_PER_DAY)
     {
+        SYSTEMTIME wall;
         int64_t instants[2];
         int count = 0;
+        time_to_parts(candidate, &wall);
+        if (!(days & (1 << wall.wDayOfWeek))) continue;
         /* A time skipped by the spring-forward change runs at the next valid local minute. */
-        for (int minute = 0; minute < 24 * 60; minute++)
+        for (int minute = 0; minute < 24 * 60 && !count; minute++)
         {
-            SYSTEMTIME wall;
-            time_to_parts(candidate, &wall);
+            time_to_parts(candidate + minute * TICKS_PER_MINUTE, &wall);
             count = time_local_to_utc(&wall, instants);
-            if (count) break;
-            candidate += TICKS_PER_MINUTE;
         }
         /* A repeated hour has two instants; take the first that is still ahead. */
         for (int i = 0; i < count; i++)
             if (instants[i] > now.ticks) return dto_from_ticks(instants[i]);
-        candidate += TICKS_PER_DAY;
     }
     return dto_from_ticks(now.ticks + TICKS_PER_DAY);
 }

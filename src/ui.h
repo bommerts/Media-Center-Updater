@@ -53,6 +53,7 @@ SIZE ui_text_size(HWND control);                /* size of the control's text on
 /* Handlers for a parent window's messages. */
 LRESULT ui_on_ctlcolor(UINT message, HDC dc, HWND control);
 bool ui_on_notify(const NMHDR *header, LRESULT *result);
+bool ui_on_draw_item(const DRAWITEMSTRUCT *item);       /* WM_DRAWITEM from a drop-down list */
 
 void ui_round_rect(HDC dc, const RECT *rect, int radius, COLORREF fill, COLORREF stroke, bool has_stroke);
 void ui_circle(HDC dc, int x, int y, int diameter, COLORREF color);

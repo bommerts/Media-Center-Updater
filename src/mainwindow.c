@@ -25,14 +25,16 @@ enum { TIMER_SCHEDULE = 1, TIMER_INSTALL = 2 };
 enum
 {
     ID_CHECK = 100, ID_INSTALL, ID_TAB_UPDATES, ID_TAB_SETTINGS, ID_OPEN_LOGS,
-    ID_SCHEDULE_TOGGLE, ID_SCHEDULE_MODE, ID_INTERVAL, ID_INTERVAL_DOWN, ID_INTERVAL_UP, ID_HOUR, ID_MINUTE, ID_SCHEDULE_CHECK_NOW,
+    ID_SCHEDULE_TOGGLE, ID_SCHEDULE_MODE, ID_INTERVAL, ID_INTERVAL_DOWN, ID_INTERVAL_UP, ID_INTERVAL_UNIT, ID_HOUR, ID_MINUTE,
+    ID_SCHEDULE_CHECK_NOW,
     ID_PULSARR_KEY, ID_PULSARR_KEY_SHOW, ID_FIND_PULSARR_KEY,
     ID_THEME, ID_TRAY, ID_START_MINIMIZED, ID_STARTUP,
     ID_APP_UPDATE_CHECK_TOGGLE, ID_APP_UPDATE_INSTALL_TOGGLE, ID_APP_UPDATE_CHECK, ID_APP_UPDATE_INSTALL,
     ID_RADARR_URL, ID_RADARR_KEY, ID_RADARR_KEY_SHOW, ID_SONARR_URL, ID_SONARR_KEY, ID_SONARR_KEY_SHOW,
     ID_FIND_KEYS, ID_SAVE_CONNECTIONS, ID_ELEVATE, ID_EXIT,
     ID_TRAY_OPEN, ID_TRAY_CHECK, ID_TRAY_EXIT,
-    ID_MONITOR = 200, ID_AUTO_INSTALL = 210, ID_USAGE = 220
+    ID_MONITOR = 200, ID_AUTO_INSTALL = 210, ID_USAGE = 220,
+    ID_DAY = 230            /* seven of them, Sunday first */
 };
 
 /* Things painted behind the controls of a tab: cards, notices, status dots and text box frames. */
@@ -97,7 +99,9 @@ static struct
     /* Settings tab. */
     HWND settings_title, settings_intro;
     HWND schedule_title, schedule_description, schedule_toggle, schedule_mode_label, schedule_mode, interval_label, interval,
-        interval_down, interval_up, time_label, hour, minute, schedule_detail, schedule_check_now, schedule_note;
+        interval_down, interval_up, interval_unit, time_label, hour, minute, days_label, days[7], schedule_detail,
+        schedule_check_now, schedule_note;
+    int first_day;                      /* the day the user's week starts on, 0 for Sunday; days[] is indexed by day */
     HWND usage_title, usage_description, pulsarr_key_title, pulsarr_key_description, pulsarr_key, pulsarr_key_show,
         find_pulsarr_key, pulsarr_key_status;
     HWND appearance_title, theme_label, theme, tray_label, tray_toggle, tray_note, start_minimized, startup;
@@ -470,6 +474,7 @@ static void layout_settings(Panel *panel, int width)
         place_field(panel, W.interval, bx, y + header_height + S(6), S(100));
         place(panel, W.interval_down, bx + S(106), y + header_height + S(6), S(36), S(32));
         place(panel, W.interval_up, bx + S(148), y + header_height + S(6), S(36), S(32));
+        place_combo(panel, W.interval_unit, bx + S(192), y + header_height + S(6), S(120));
     }
     else
     {
@@ -478,6 +483,26 @@ static void layout_settings(Panel *panel, int width)
         place_combo(panel, W.minute, bx + S(118), y + header_height + S(6), S(80));
     }
     y += header_height + S(6) + S(32) + S(16);
+    if (is_shown(W.days_label))
+    {
+        int day_x = cx;
+        place(panel, W.days_label, cx, y, cw, header_height);
+        y += header_height + S(6);
+        for (int i = 0; i < 7; i++)
+        {
+            HWND day = W.days[(W.first_day + i) % 7];
+            int day_width = S(28) + ui_text_size(day).cx + S(18);
+            /* Day names are long in some languages, so the row wraps. */
+            if (day_x > cx && day_x + day_width > cx + cw)
+            {
+                day_x = cx;
+                y += check_height + S(6);
+            }
+            place(panel, day, day_x, y, day_width, check_height);
+            day_x += day_width;
+        }
+        y += check_height + S(16);
+    }
     bx = button_width(W.schedule_check_now);
     h = maximum(ui_text_height(W.schedule_detail, cw - bx - S(12)), button_height);
     place(panel, W.schedule_detail, cx, y + (h - ui_text_height(W.schedule_detail, cw - bx - S(12))) / 2, cw - bx - S(12),
@@ -836,6 +861,9 @@ static LRESULT CALLBACK panel_proc(HWND window, UINT message, WPARAM wparam, LPA
     }
     case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN:
         return ui_on_ctlcolor(message, (HDC)wparam, (HWND)lparam);
+    case WM_DRAWITEM:
+        if (ui_on_draw_item((const DRAWITEMSTRUCT *)lparam)) return TRUE;
+        break;
     case WM_COMMAND: case WM_NOTIFY:
         return SendMessageW(GetParent(window), message, wparam, lparam);
     }
@@ -844,19 +872,62 @@ static LRESULT CALLBACK panel_proc(HWND window, UINT message, WPARAM wparam, LPA
 
 /* ---- Settings ---- */
 
-static bool read_interval(int *value)
+static IntervalUnit selected_unit(void)
+{
+    int unit = (int)SendMessageW(W.interval_unit, CB_GETCURSEL, 0, 0);
+    return unit < 0 || unit >= INTERVAL_UNIT_COUNT ? W.settings->interval_unit : (IntervalUnit)unit;
+}
+
+/* The saved interval, counted in its unit. */
+static int interval_count(void)
+{
+    return W.settings->interval_minutes / interval_unit_minutes(W.settings->interval_unit);
+}
+
+/* The interval the boxes describe, in minutes and within the allowed range. A box that is empty or holds
+   something other than a number (it can be pasted in) keeps the saved number. */
+static int read_interval(void)
 {
     wchar_t text[16];
+    int count = 0;
     get_text(W.interval, text, COUNTOF(text), true);
-    if (!text[0]) return false;
-    int result = 0;
     for (const wchar_t *p = text; *p; p++)
     {
-        if (*p < L'0' || *p > L'9' || result > 100000) return false;
-        result = result * 10 + (*p - L'0');
+        if (*p < L'0' || *p > L'9' || count > 100000)
+        {
+            text[0] = 0;
+            break;
+        }
+        count = count * 10 + (*p - L'0');
     }
-    *value = result < 1 ? 1 : result > 168 ? 168 : result;
-    return true;
+    return interval_from_unit(text[0] ? count : interval_count(), selected_unit());
+}
+
+static void show_interval(void)
+{
+    wchar_t text[16];
+    str_fmt(text, COUNTOF(text), L"%d", interval_count());
+    ui_set_text(W.interval, text);
+}
+
+static int selected_days(void)
+{
+    int days = 0;
+    for (int i = 0; i < 7; i++)
+        if (is_checked(W.days[i])) days |= 1 << i;
+    return days;
+}
+
+static void enable_schedule_controls(bool enabled)
+{
+    enable(W.schedule_mode, enabled);
+    enable(W.interval, enabled);
+    enable(W.interval_down, enabled);
+    enable(W.interval_up, enabled);
+    enable(W.interval_unit, enabled);
+    enable(W.hour, enabled);
+    enable(W.minute, enabled);
+    for (int i = 0; i < 7; i++) enable(W.days[i], enabled);
 }
 
 static void refresh_schedule_text(void)
@@ -894,19 +965,17 @@ static void refresh_preferences(void)
     bool daily = SendMessageW(W.schedule_mode, CB_GETCURSEL, 0, 0) == 1;
     bool schedule = is_checked(W.schedule_toggle) && !busy();
     int count = 0;
-    enable(W.schedule_mode, schedule);
-    enable(W.interval, schedule);
-    enable(W.interval_down, schedule);
-    enable(W.interval_up, schedule);
-    enable(W.hour, schedule);
-    enable(W.minute, schedule);
+    enable_schedule_controls(schedule);
     show(W.interval_label, !daily);
     show(W.interval, !daily);
     show(W.interval_down, !daily);
     show(W.interval_up, !daily);
+    show(W.interval_unit, !daily);
     show(W.time_label, daily);
     show(W.hour, daily);
     show(W.minute, daily);
+    show(W.days_label, daily);
+    for (int i = 0; i < 7; i++) show(W.days[i], daily);
     enable(W.start_minimized, is_checked(W.tray_toggle));
     set_text(W.background_text, is_checked(W.tray_toggle) ? L"Close to tray is on" : L"Closing the window exits the app");
     for (int i = 0; i < APP_COUNT; i++)
@@ -928,23 +997,27 @@ static bool save_settings(bool save_connections)
     if (W.initializing) return true;
     AppSettings *settings = W.settings;
     wchar_t error[MSGN], text[MSGN];
-    int interval = 0;
-    bool has_interval = read_interval(&interval);
+    IntervalUnit unit = selected_unit();
+    int interval = read_interval(), days = selected_days();
     bool schedule = is_checked(W.schedule_toggle);
     ScheduleMode mode = SendMessageW(W.schedule_mode, CB_GETCURSEL, 0, 0) == 1 ? SCHEDULE_DAILY : SCHEDULE_INTERVAL;
     int hour = (int)SendMessageW(W.hour, CB_GETCURSEL, 0, 0), minute = (int)SendMessageW(W.minute, CB_GETCURSEL, 0, 0);
     int theme = (int)SendMessageW(W.theme, CB_GETCURSEL, 0, 0);
     if (hour < 0) hour = settings->daily_hour;
     if (minute < 0) minute = settings->daily_minute;
+    if (!days) days = settings->daily_days;
     bool schedule_changed = settings->schedule_enabled != schedule || settings->schedule_mode != mode ||
-        (has_interval && settings->interval_hours != interval) || settings->daily_hour != hour || settings->daily_minute != minute;
+        settings->interval_minutes != interval || settings->daily_hour != hour || settings->daily_minute != minute ||
+        settings->daily_days != days;
 
     str_copy(settings->theme, COUNTOF(settings->theme), themes[theme < 0 || theme > 2 ? 0 : theme]);
     settings->schedule_enabled = schedule;
     settings->schedule_mode = mode;
-    if (has_interval) settings->interval_hours = interval;
+    settings->interval_minutes = interval;
+    settings->interval_unit = unit;
     settings->daily_hour = hour;
     settings->daily_minute = minute;
+    settings->daily_days = days;
     settings->minimize_to_tray = is_checked(W.tray_toggle);
     settings->start_minimized = is_checked(W.start_minimized);
     settings->app_update_check = is_checked(W.app_update_check_toggle);
@@ -1003,12 +1076,7 @@ static void set_busy(bool is_busy)
     enable(W.pulsarr_key, connection_controls);
     enable(W.find_pulsarr_key, connection_controls);
     enable(W.schedule_toggle, !is_busy);
-    enable(W.schedule_mode, schedule);
-    enable(W.interval, schedule);
-    enable(W.interval_down, schedule);
-    enable(W.interval_up, schedule);
-    enable(W.hour, schedule);
-    enable(W.minute, schedule);
+    enable_schedule_controls(schedule);
     enable(W.elevate, connection_controls);
     enable(W.startup, !is_busy);
     for (int i = 0; i < APP_COUNT; i++)
@@ -1545,10 +1613,10 @@ static void toggle_reveal(HWND edit, HWND button)
 static void change_interval(int delta)
 {
     wchar_t text[16];
-    int value = W.settings->interval_hours;
-    read_interval(&value);
-    value += delta;
-    str_fmt(text, COUNTOF(text), L"%d", value < 1 ? 1 : value > 168 ? 168 : value);
+    IntervalUnit unit = selected_unit();
+    int unit_minutes = interval_unit_minutes(unit);
+    if (unit == INTERVAL_MINUTES) delta *= 5;
+    str_fmt(text, COUNTOF(text), L"%d", interval_from_unit(read_interval() / unit_minutes + delta, unit) / unit_minutes);
     SetWindowTextW(W.interval, text);
 }
 
@@ -1598,6 +1666,13 @@ static void on_command(int id, int code, HWND control)
         preference_changed();
         return;
     }
+    if (id >= ID_DAY && id < ID_DAY + 7 && code == BN_CLICKED)
+    {
+        /* A schedule with no days would never run, so the last day stays checked. */
+        if (!selected_days()) set_checked(control, true);
+        else preference_changed();
+        return;
+    }
     /* Text boxes repaint their frame when the keyboard focus enters or leaves. */
     if (code == EN_SETFOCUS || code == EN_KILLFOCUS)
     {
@@ -1605,11 +1680,8 @@ static void on_command(int id, int code, HWND control)
         {
         case ID_INTERVAL: case ID_PULSARR_KEY: case ID_RADARR_URL: case ID_RADARR_KEY: case ID_SONARR_URL: case ID_SONARR_KEY:
             InvalidateRect(GetParent(control), NULL, FALSE);
-            if (id == ID_INTERVAL && code == EN_KILLFOCUS && !W.initializing)
-            {
-                str_fmt(text, 16, L"%d", W.settings->interval_hours);
-                ui_set_text(W.interval, text);
-            }
+            /* Typing is saved as it happens; leaving the box shows the number that was kept. */
+            if (id == ID_INTERVAL && code == EN_KILLFOCUS && !W.initializing) show_interval();
             return;
         }
     }
@@ -1631,6 +1703,14 @@ static void on_command(int id, int code, HWND control)
         break;
     case ID_INTERVAL:
         if (code == EN_CHANGE) preference_changed();
+        break;
+    case ID_INTERVAL_UNIT:
+        if (code == CBN_SELCHANGE && !W.initializing)
+        {
+            /* The number stays unless the new unit does not allow it: 5 hours becomes 15 minutes, not 5. */
+            preference_changed();
+            show_interval();
+        }
         break;
     case ID_INTERVAL_DOWN: change_interval(-1); break;
     case ID_INTERVAL_UP: change_interval(1); break;
@@ -1906,7 +1986,8 @@ static void create_updates_tab(HWND parent)
 
 static void create_settings_tab(HWND parent)
 {
-    static const wchar_t *const modes[] = { L"Every few hours", L"Once a day" };
+    static const wchar_t *const modes[] = { L"At regular intervals", L"At a set time" };
+    static const wchar_t *const units[] = { L"Minutes", L"Hours", L"Days" };
     static const wchar_t *const themes[] = { L"Dark", L"Light", L"Use Windows setting" };
     wchar_t item[32];
     const Surface card = SURFACE_CARD;
@@ -1917,15 +1998,17 @@ static void create_settings_tab(HWND parent)
     W.schedule_title = label(parent, L"Scheduled updates", FONT_SUBTITLE, TEXT_PRIMARY, card);
     W.schedule_description = label(parent, L"Check monitored apps and apply their automatic install preferences.", FONT_BODY, TEXT_SECONDARY, card);
     W.schedule_toggle = ui_button(parent, ID_SCHEDULE_TOGGLE, L"Enable scheduled updates", BUTTON_SWITCH, card);
-    W.schedule_mode_label = label(parent, L"Frequency", FONT_BODY, TEXT_PRIMARY, card);
+    W.schedule_mode_label = label(parent, L"When to check", FONT_BODY, TEXT_PRIMARY, card);
     W.schedule_mode = ui_combo(parent, ID_SCHEDULE_MODE);
     add_items(W.schedule_mode, modes, COUNTOF(modes));
-    W.interval_label = label(parent, L"Hours between checks", FONT_BODY, TEXT_PRIMARY, card);
+    W.interval_label = label(parent, L"Time between checks", FONT_BODY, TEXT_PRIMARY, card);
     W.interval = ui_edit(parent, ID_INTERVAL, false, NULL);
     SetWindowLongW(W.interval, GWL_STYLE, GetWindowLongW(W.interval, GWL_STYLE) | ES_NUMBER);
-    SendMessageW(W.interval, EM_SETLIMITTEXT, 3, 0);
+    SendMessageW(W.interval, EM_SETLIMITTEXT, 5, 0);
     W.interval_down = ui_button(parent, ID_INTERVAL_DOWN, L"\x2212", BUTTON_STANDARD, card);
     W.interval_up = ui_button(parent, ID_INTERVAL_UP, L"+", BUTTON_STANDARD, card);
+    W.interval_unit = ui_combo(parent, ID_INTERVAL_UNIT);
+    add_items(W.interval_unit, units, COUNTOF(units));
     W.time_label = label(parent, L"Local time", FONT_BODY, TEXT_PRIMARY, card);
     W.hour = ui_combo(parent, ID_HOUR);
     W.minute = ui_combo(parent, ID_MINUTE);
@@ -1938,6 +2021,19 @@ static void create_settings_tab(HWND parent)
     {
         str_fmt(item, COUNTOF(item), L":%02d", i);
         SendMessageW(W.minute, CB_ADDSTRING, 0, (LPARAM)item);
+    }
+    /* The days in the order and with the names of the user's region. Windows counts them from Monday. */
+    DWORD first_day = 6;
+    GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_IFIRSTDAYOFWEEK | LOCALE_RETURN_NUMBER, (wchar_t *)&first_day,
+        sizeof(first_day) / sizeof(wchar_t));
+    W.first_day = (int)((first_day + 1) % 7);
+    W.days_label = label(parent, L"On these days", FONT_BODY, TEXT_PRIMARY, card);
+    for (int i = 0; i < 7; i++)
+    {
+        int day = (W.first_day + i) % 7;
+        if (!GetLocaleInfoEx(LOCALE_NAME_USER_DEFAULT, LOCALE_SABBREVDAYNAME1 + (day + 6) % 7, item, COUNTOF(item)))
+            str_fmt(item, COUNTOF(item), L"Day %d", day + 1);
+        W.days[day] = ui_button(parent, ID_DAY + day, item, BUTTON_CHECK, card);
     }
     W.schedule_detail = label(parent, L"", FONT_BODY, TEXT_SECONDARY, card);
     W.schedule_check_now = ui_button(parent, ID_SCHEDULE_CHECK_NOW, L"Check now", BUTTON_STANDARD, card);
@@ -2034,10 +2130,11 @@ static void load_controls(void)
     SendMessageW(W.theme, CB_SETCURSEL, wcscmp(settings->theme, L"Light") == 0 ? 1 : wcscmp(settings->theme, L"System") == 0 ? 2 : 0, 0);
     set_checked(W.schedule_toggle, settings->schedule_enabled);
     SendMessageW(W.schedule_mode, CB_SETCURSEL, settings->schedule_mode == SCHEDULE_DAILY ? 1 : 0, 0);
-    str_fmt(text, COUNTOF(text), L"%d", settings->interval_hours);
-    SetWindowTextW(W.interval, text);
+    SendMessageW(W.interval_unit, CB_SETCURSEL, settings->interval_unit, 0);
+    show_interval();
     SendMessageW(W.hour, CB_SETCURSEL, settings->daily_hour, 0);
     SendMessageW(W.minute, CB_SETCURSEL, settings->daily_minute, 0);
+    for (int i = 0; i < 7; i++) set_checked(W.days[i], (settings->daily_days >> i) & 1);
     set_checked(W.tray_toggle, settings->minimize_to_tray);
     set_checked(W.start_minimized, settings->start_minimized);
     set_checked(W.app_update_check_toggle, settings->app_update_check);

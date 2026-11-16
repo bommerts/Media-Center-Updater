@@ -2,14 +2,14 @@
 
 <h1 align="center">Media Center Updater</h1>
 
-<p align="center"><strong>Current version: 0.4.1</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
+<p align="center"><strong>Current version: 0.4.2</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
 
 A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
 
 ## Features
 
 - Checks all supported apps at once, or installs their updates in one click.
-- Scheduled updates, every few hours or at a set time each day.
+- Scheduled updates, at an interval you choose (from 15 minutes to 30 days) or at a set time on the days of the week you pick.
 - Per-app switches to monitor an app, and to let it update automatically.
 - Waits to update an app while it is in use: Plex streaming, SABnzbd downloading, Radarr or Sonarr running a task, or Pulsarr syncing. This is on for every app by default.
 - Verifies every download (checksums and signatures) before installing, and never reboots Windows.
@@ -62,7 +62,7 @@ Prefer to build it yourself? See [Building](#building).
 ### Step 3: Keep it running
 
 1. Turn on **Start with Windows when I sign in**. The updater then starts in the notification area each time you sign in, without an administrator prompt.
-2. Optional: turn on **Scheduled updates** and pick how often to check, or a daily time. Choose a time when nobody is watching or downloading, because updates briefly restart the apps.
+2. Optional: turn on **Scheduled updates** and pick how often to check, or a time of day and the days it applies to. Choose a time when nobody is watching or downloading, because updates briefly restart the apps.
 3. Close the window. The updater keeps running in the notification area, next to the clock.
 
 The updater only runs while someone is signed in to the media server. If your server sits at the sign-in screen after a reboot, scheduled updates won't run until someone signs in. Windows can sign in automatically if you want unattended updates; that's a Windows setting, not part of this app.
@@ -88,7 +88,7 @@ Uninstall **Media Center Updater** from Windows **Settings > Apps > Installed ap
 2. Review each program's **Monitor** and **Automatic install** switches. Both are on by default.
 3. **Check & install** checks and immediately applies eligible updates, respecting each program's Automatic install switch.
 4. Optional: turn on **Start with Windows when I sign in**. This creates a Task Scheduler task for the current Windows user that starts the updater in the tray with administrator rights, so there is no elevation prompt at each sign-in. Use this option rather than a shortcut in the Startup folder. It runs after sign-in, not before.
-5. Optional: turn on **Scheduled updates** and pick an interval (1 to 168 hours) or a daily time. Scheduled runs install updates for monitored programs that have Automatic install turned on. The schedule is off by default.
+5. Optional: turn on **Scheduled updates** and choose when to check. **At regular intervals** repeats every so many minutes, hours or days, from 15 minutes to 30 days. **At a set time** runs at one local time on the days of the week you check, such as every day at 3 AM or only on Sundays. Scheduled runs install updates for monitored programs that have Automatic install turned on. The schedule is off by default.
 6. **Settings > Wait while apps are in use** is on for every app, so an update never interrupts an app that is busy. An install for a checked app is skipped while it is in use and tried again about 30 minutes later. If the app cannot be checked, the update also waits and the app shows why. Uncheck an app to update it even while it is busy. Pulsarr requires sign-in by default, so this check needs a Pulsarr API key. The updater reads one from Pulsarr's database on this PC by itself. A **Pulsarr API key** box with a **Find key** button appears only when a key is needed. If Pulsarr has no key yet, create one in Pulsarr under **Utilities > API Keys**, then click **Find key**.
 
 Closing or minimizing the window hides it in the notification area by default. Click the tray icon to reopen it; its menu offers Open, Check for updates, and Exit. Settings let you turn this off, start minimized, and choose a Light, Dark, or system theme. The updater only runs while a Windows user is signed in and the PC is awake. A missed scheduled run happens once when the app next resumes or starts.

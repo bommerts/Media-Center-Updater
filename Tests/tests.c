@@ -432,7 +432,8 @@ static void test_settings(void)
     SYSTEMTIME next;
     time_to_parts(loaded->next_run.ticks, &next);
     check(!upgrade.load_warning[0] && wcscmp(loaded->theme, L"Light") == 0 && !loaded->minimize_to_tray && loaded->start_minimized &&
-        loaded->schedule_enabled && loaded->schedule_mode == SCHEDULE_DAILY && loaded->interval_hours == 12 &&
+        loaded->schedule_enabled && loaded->schedule_mode == SCHEDULE_DAILY && loaded->interval_minutes == 12 * 60 &&
+        loaded->interval_unit == INTERVAL_HOURS && loaded->daily_days == ALL_DAYS &&
         loaded->daily_hour == 4 && loaded->daily_minute == 45 && !loaded->last_scheduled_run.has && loaded->next_run.has &&
         next.wDay == 16 && next.wHour == 10 && next.wMinute == 45 && loaded->next_run.offset_minutes == -360 &&
         !loaded->app_update_check && loaded->app_update_install && loaded->last_app_update_check.has &&
@@ -440,6 +441,24 @@ static void test_settings(void)
         !loaded->programs[0].auto_install && !loaded->programs[0].wait_while_in_use &&
         wcscmp(loaded->programs[0].server_url, L"http://localhost:7878/radarr") == 0,
         L"Settings saved by the earlier .NET version load unchanged");
+
+    loaded->schedule_mode = SCHEDULE_INTERVAL;
+    loaded->interval_minutes = 45;
+    loaded->interval_unit = INTERVAL_MINUTES;
+    loaded->daily_days = (1 << 1) | (1 << 5);
+    store_save(&upgrade, loaded, error, COUNTOF(error));
+    store_load(&upgrade, loaded);
+    check(loaded->interval_minutes == 45 && loaded->interval_unit == INTERVAL_MINUTES && loaded->daily_days == ((1 << 1) | (1 << 5)),
+        L"An interval in minutes and chosen days of the week are saved and read back");
+    write_text(path, "{\"IntervalMinutes\":90,\"IntervalUnit\":1,\"DailyDays\":0}");
+    store_load(&upgrade, loaded);
+    check(loaded->interval_minutes == 90 && loaded->interval_unit == INTERVAL_MINUTES && loaded->daily_days == ALL_DAYS,
+        L"An interval that is not whole hours is shown in minutes, and a schedule with no days runs every day");
+    write_text(path, "{\"IntervalMinutes\":1,\"IntervalUnit\":9}");
+    store_load(&upgrade, loaded);
+    check(loaded->interval_minutes == INTERVAL_MIN_MINUTES && interval_from_unit(0, INTERVAL_HOURS) == 60 &&
+        interval_from_unit(1000, INTERVAL_DAYS) == INTERVAL_MAX_MINUTES && interval_from_unit(3, INTERVAL_MINUTES) == INTERVAL_MIN_MINUTES,
+        L"Intervals stay between 15 minutes and 30 days");
 
     ActivityEntry entry = { dto_now(), L"Updater", L"A \"quoted\" message \x2192 with\nnew line", true }, read_back[4];
     store_log(&upgrade, &entry);
@@ -550,7 +569,7 @@ static void test_coordinator(void)
 
     only(settings, 1, plex_only);
     settings->schedule_enabled = true;
-    settings->interval_hours = 6;
+    settings->interval_minutes = 6 * 60;
     settings->next_run = dto_from_ticks(time_now() - 3 * TICKS_PER_DAY);
     make_store(&store, L"schedule");
     coordinator_init(&coordinator, settings, &store, fake_provider(&fake));
@@ -564,12 +583,18 @@ static void test_coordinator(void)
     coordinator_evaluate_schedule(&coordinator);
     check(fake.checked_count == 1, L"Disabling the schedule blocks overdue work");
 
+    SYSTEMTIME parts = { 2026, 9, 0, 11, 16, 0, 0, 0 }, local;
+    DateTimeOffset now = { true, time_from_parts(&parts), 0 };
+    settings->interval_minutes = 45;
+    DateTimeOffset next = coordinator_compute_next_run(settings, now);
+    check(next.ticks - now.ticks == 45 * TICKS_PER_MINUTE, L"An interval can be shorter than an hour");
+    settings->interval_minutes = 3 * 24 * 60;
+    check(coordinator_compute_next_run(settings, now).ticks - now.ticks == 3 * TICKS_PER_DAY, L"An interval can be several days");
+
     settings->schedule_mode = SCHEDULE_DAILY;
     settings->daily_hour = 3;
     settings->daily_minute = 15;
-    SYSTEMTIME parts = { 2026, 9, 0, 11, 16, 0, 0, 0 }, local;
-    DateTimeOffset now = { true, time_from_parts(&parts), 0 };
-    DateTimeOffset next = coordinator_compute_next_run(settings, now);
+    next = coordinator_compute_next_run(settings, now);
     time_to_local(next.ticks, &local);
     check(next.ticks > now.ticks && next.ticks - now.ticks <= 25 * TICKS_PER_HOUR && local.wHour == 3 && local.wMinute == 15,
         L"Daily schedule uses the next occurrence in local time");
@@ -593,6 +618,31 @@ static void test_coordinator(void)
         }
     }
     check(consistent, L"Daily schedule always moves forward, by a day at most, on every day of the year");
+
+    /* Chosen days: every start day across two years, for each single day and for a weekend pair. */
+    static const int day_sets[] = { 1 << 0, 1 << 1, 1 << 2, 1 << 3, 1 << 4, 1 << 5, 1 << 6, (1 << 0) | (1 << 6) };
+    settings->daily_hour = 3;
+    consistent = true;
+    for (int set = 0; set < (int)COUNTOF(day_sets) && consistent; set++)
+    {
+        settings->daily_days = day_sets[set];
+        int64_t longest = (day_sets[set] == ((1 << 0) | (1 << 6)) ? 6 : 7) * TICKS_PER_DAY + 2 * TICKS_PER_HOUR;
+        for (int day = 0; day < 730 && consistent; day++)
+        {
+            SYSTEMTIME start = { 2026, 1, 0, 1, 0, 0, 0, 0 };
+            now.ticks = time_from_parts(&start) + day * TICKS_PER_DAY + 17 * TICKS_PER_MINUTE;
+            next = coordinator_compute_next_run(settings, now);
+            time_to_local(next.ticks, &local);
+            consistent = next.ticks > now.ticks && next.ticks - now.ticks <= longest && (day_sets[set] & (1 << local.wDayOfWeek)) &&
+                local.wMinute == 30;
+        }
+    }
+    check(consistent, L"A schedule for chosen days of the week only runs on those days, at the requested time");
+    settings->daily_days = 0;
+    SYSTEMTIME anytime = { 2026, 6, 0, 10, 12, 0, 0, 0 };
+    now.ticks = time_from_parts(&anytime);
+    check(coordinator_compute_next_run(settings, now).ticks - now.ticks <= 25 * TICKS_PER_HOUR, L"A schedule with no days chosen still runs daily");
+    settings->daily_days = ALL_DAYS;
 
     Version version;
     check(version_parse(L"v1.2.3", &version) && version.part[0] == 1 && version.part[1] == 2 && version.part[2] == 3 && version.part[3] == 0,

@@ -258,10 +258,12 @@ static void theme_combo(HWND combo)
     SendMessageW(combo, CB_SETITEMHEIGHT, 0, ui_px(26));
 }
 
+/* The rows are drawn by ui_on_draw_item. Windows would paint the selected row of a dark list in the system
+   highlight colours, which on some versions is white text on white. */
 HWND ui_combo(HWND parent, int id)
 {
-    HWND combo = create_control(L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_HASSTRINGS, parent, id,
-        FONT_BODY, DATA(TAG_COMBO, FONT_BODY, 0, SURFACE_CARD));
+    HWND combo = create_control(L"COMBOBOX", L"", WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST | CBS_HASSTRINGS | CBS_OWNERDRAWFIXED,
+        parent, id, FONT_BODY, DATA(TAG_COMBO, FONT_BODY, 0, SURFACE_CARD));
     theme_combo(combo);
     return combo;
 }
@@ -559,6 +561,48 @@ LRESULT ui_on_ctlcolor(UINT message, HDC dc, HWND control)
     SetTextColor(dc, theme.text);
     SetBkColor(dc, theme.surface[SURFACE_PAGE]);
     return (LRESULT)surface_brushes[SURFACE_PAGE];
+}
+
+static COLORREF blend(COLORREF from, COLORREF to, int percent)
+{
+    return RGB(GetRValue(from) + (GetRValue(to) - GetRValue(from)) * percent / 100,
+        GetGValue(from) + (GetGValue(to) - GetGValue(from)) * percent / 100,
+        GetBValue(from) + (GetBValue(to) - GetBValue(from)) * percent / 100);
+}
+
+/* Draws one row of a drop-down list, or the chosen item shown in the closed box. */
+bool ui_on_draw_item(const DRAWITEMSTRUCT *item)
+{
+    if (item->CtlType != ODT_COMBOBOX || (GetWindowLongPtrW(item->hwndItem, GWLP_USERDATA) & TAG_MASK) != TAG_COMBO) return false;
+    wchar_t text[128] = L"";
+    RECT rect = item->rcItem;
+    bool in_box = (item->itemState & ODS_COMBOBOXEDIT) != 0, selected = (item->itemState & ODS_SELECTED) != 0;
+    if (item->itemID != (UINT)-1 && SendMessageW(item->hwndItem, CB_GETLBTEXTLEN, item->itemID, 0) < (LRESULT)COUNTOF(text))
+        SendMessageW(item->hwndItem, CB_GETLBTEXT, item->itemID, (LPARAM)text);
+    HGDIOBJ previous = SelectObject(item->hDC, fonts[FONT_BODY]);
+    SetBkMode(item->hDC, TRANSPARENT);
+    if (in_box)
+    {
+        /* The themed box has already painted its own background, which changes as it is pointed at or pressed. */
+        rect.left += ui_px(3);
+        SetTextColor(item->hDC, (item->itemState & ODS_DISABLED) ? theme.text_disabled : theme.text);
+    }
+    else
+    {
+        FillRect(item->hDC, &rect, field_brush);
+        if (selected)
+        {
+            RECT highlight = { rect.left + ui_px(3), rect.top + ui_px(1), rect.right - ui_px(3), rect.bottom - ui_px(1) };
+            RECT mark = { highlight.left, rect.top + ui_px(6), highlight.left + ui_px(3), rect.bottom - ui_px(6) };
+            ui_round_rect(item->hDC, &highlight, ui_px(4), blend(theme.field, theme.text, 14), 0, false);
+            ui_round_rect(item->hDC, &mark, ui_px(2), theme.accent, 0, false);
+        }
+        rect.left += ui_px(12);
+        SetTextColor(item->hDC, theme.text);
+    }
+    DrawTextW(item->hDC, text, -1, &rect, DT_LEFT | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
+    SelectObject(item->hDC, previous);
+    return true;
 }
 
 static void draw_button(HWND button, HDC target, UINT state, LONG_PTR data)

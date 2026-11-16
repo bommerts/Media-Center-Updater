@@ -12,7 +12,14 @@ typedef enum
     STATE_NOT_INSTALLED, STATE_NEEDS_SETUP, STATE_ERROR, STATE_RESTART_REQUIRED
 } UpdateState;
 
+/* SCHEDULE_INTERVAL repeats after a length of time. SCHEDULE_DAILY runs at a set local time on chosen days of the week. */
 typedef enum { SCHEDULE_INTERVAL, SCHEDULE_DAILY } ScheduleMode;
+/* The unit the interval is shown and edited in. The interval itself is always kept in minutes. */
+typedef enum { INTERVAL_MINUTES, INTERVAL_HOURS, INTERVAL_DAYS, INTERVAL_UNIT_COUNT } IntervalUnit;
+
+#define INTERVAL_MIN_MINUTES 15                 /* often enough for anyone, and gentle on the release feeds */
+#define INTERVAL_MAX_MINUTES (30 * 24 * 60)
+#define ALL_DAYS 0x7F                           /* one bit per day of the week, bit 0 is Sunday */
 
 typedef struct ProgramSettings
 {
@@ -36,9 +43,11 @@ typedef struct AppSettings
     bool start_minimized;
     bool schedule_enabled;
     ScheduleMode schedule_mode;
-    int interval_hours;
+    int interval_minutes;
+    IntervalUnit interval_unit;
     int daily_hour;
     int daily_minute;
+    int daily_days;                     /* days of the week the daily time applies to, as ALL_DAYS bits */
     DateTimeOffset last_scheduled_run;
     DateTimeOffset next_run;
     /* Updates to Media Center Updater itself. Only used by copies installed with the setup program. */
@@ -88,6 +97,11 @@ typedef struct UpdateProvider
 void settings_defaults(AppSettings *settings);
 void program_defaults(ProgramSettings *program, ApplicationId id);
 ProgramSettings *settings_program(AppSettings *settings, ApplicationId id);   /* NULL when absent */
+
+int interval_unit_minutes(IntervalUnit unit);                   /* minutes in one unit */
+int interval_from_unit(int count, IntervalUnit unit);           /* minutes, kept within the allowed range */
+/* Brings the schedule's values into range, and picks a smaller unit when the interval is not a whole number of its unit. */
+void settings_normalize_schedule(AppSettings *settings);
 
 const wchar_t *app_name(ApplicationId id);
 const wchar_t *app_key(ApplicationId id);                  /* short name used in file names */
