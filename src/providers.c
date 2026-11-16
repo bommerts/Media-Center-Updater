@@ -792,6 +792,20 @@ static bool get_running_application(const wchar_t *name, const wchar_t *executab
     return ok;
 }
 
+void providers_prune_downloads(const wchar_t *data_directory)
+{
+    wchar_t folder[PATHN], pattern[80];
+    path_join(folder, COUNTOF(folder), data_directory, L"Downloads");
+    /* An installer is deleted as soon as it finishes. One that was left behind (the updater closed during an
+       install, or the installer was still running) goes once it is a day old. */
+    files_prune(folder, L"*.exe", 0, 24);
+    for (int id = 0; id < APP_COUNT; id++)
+    {
+        str_fmt(pattern, COUNTOF(pattern), L"%s-*.log", app_key((ApplicationId)id));
+        files_prune(folder, pattern, INSTALLER_LOGS_KEPT, 0);
+    }
+}
+
 static bool install_windows(Providers *providers, ApplicationId id, const UpdateResult *update, UpdateResult *out, Err *err)
 {
     Installation *install = xalloc(sizeof(Installation)), *after = xalloc(sizeof(Installation));
@@ -1004,8 +1018,10 @@ done:
         str_copy(reason, COUNTOF(reason), failure_message(err));
         err_set(err, ERR_PROVIDER, L"%s Its Windows service could not be restarted. Start the %s service from Windows Services.", reason, service_name);
     }
-    /* Keep the small installation log, but remove this invocation's downloaded installer. */
+    /* Remove this invocation's downloaded installer, and all but the newest few installation logs. */
     if (file[0]) DeleteFileW(file);
+    app_data_directory(base, COUNTOF(base));
+    providers_prune_downloads(base);
     if (running) LocalFree(running);
     free(install);
     free(after);

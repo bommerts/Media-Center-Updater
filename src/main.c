@@ -2,6 +2,7 @@
 #include "app.h"
 #include "integration.h"
 #include "providers.h"
+#include "selfupdate.h"
 #include <shellapi.h>
 
 #ifdef MCU_DEV
@@ -83,6 +84,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE previous, PWSTR command_line, 
     store_init(&store, NULL);
     SetUnhandledExceptionFilter(record_crash);
     store_load(&store, &settings);
+    /* Installation logs from earlier updates would otherwise pile up for good. */
+    providers_prune_downloads(store.data_directory);
+    self_update_prune(store.data_directory);
     providers_init(&providers, NULL, NULL);
     coordinator_init(&coordinator, &settings, &store, providers_interface(&providers));
 

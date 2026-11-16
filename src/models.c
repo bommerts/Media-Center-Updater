@@ -16,11 +16,15 @@ void settings_defaults(AppSettings *settings)
     memset(settings, 0, sizeof(*settings));
     str_copy(settings->theme, COUNTOF(settings->theme), L"Dark");
     settings->minimize_to_tray = true;
-    settings->interval_minutes = 6 * 60;
-    settings->interval_unit = INTERVAL_HOURS;
-    settings->daily_hour = 3;
-    settings->daily_days = ALL_DAYS;
+    settings->schedule.interval_minutes = 6 * 60;
+    settings->schedule.interval_unit = INTERVAL_HOURS;
+    settings->schedule.daily_hour = 3;
+    settings->schedule.daily_days = ALL_DAYS;
     settings->app_update_check = true;
+    settings->app_update_timing.interval_minutes = 24 * 60;
+    settings->app_update_timing.interval_unit = INTERVAL_DAYS;
+    settings->app_update_timing.daily_hour = 3;
+    settings->app_update_timing.daily_days = ALL_DAYS;
     settings->program_count = APP_COUNT;
     for (int i = 0; i < APP_COUNT; i++) program_defaults(&settings->programs[i], (ApplicationId)i);
 }
@@ -47,18 +51,18 @@ int interval_from_unit(int count, IntervalUnit unit)
     return clamp(count, low, high) * unit_minutes;
 }
 
-void settings_normalize_schedule(AppSettings *settings)
+void timing_normalize(ScheduleTiming *timing)
 {
-    settings->schedule_mode = settings->schedule_mode == SCHEDULE_DAILY ? SCHEDULE_DAILY : SCHEDULE_INTERVAL;
-    settings->interval_minutes = clamp(settings->interval_minutes, INTERVAL_MIN_MINUTES, INTERVAL_MAX_MINUTES);
-    if (settings->interval_unit < INTERVAL_MINUTES || settings->interval_unit >= INTERVAL_UNIT_COUNT)
-        settings->interval_unit = INTERVAL_HOURS;
-    while (settings->interval_unit > INTERVAL_MINUTES && settings->interval_minutes % interval_unit_minutes(settings->interval_unit))
-        settings->interval_unit = (IntervalUnit)(settings->interval_unit - 1);
-    settings->daily_hour = clamp(settings->daily_hour, 0, 23);
-    settings->daily_minute = clamp(settings->daily_minute, 0, 59);
-    settings->daily_days &= ALL_DAYS;
-    if (!settings->daily_days) settings->daily_days = ALL_DAYS;
+    timing->mode = timing->mode == SCHEDULE_DAILY ? SCHEDULE_DAILY : SCHEDULE_INTERVAL;
+    timing->interval_minutes = clamp(timing->interval_minutes, INTERVAL_MIN_MINUTES, INTERVAL_MAX_MINUTES);
+    if (timing->interval_unit < INTERVAL_MINUTES || timing->interval_unit >= INTERVAL_UNIT_COUNT)
+        timing->interval_unit = INTERVAL_HOURS;
+    while (timing->interval_unit > INTERVAL_MINUTES && timing->interval_minutes % interval_unit_minutes(timing->interval_unit))
+        timing->interval_unit = (IntervalUnit)(timing->interval_unit - 1);
+    timing->daily_hour = clamp(timing->daily_hour, 0, 23);
+    timing->daily_minute = clamp(timing->daily_minute, 0, 59);
+    timing->daily_days &= ALL_DAYS;
+    if (!timing->daily_days) timing->daily_days = ALL_DAYS;
 }
 
 const wchar_t *app_name(ApplicationId id)

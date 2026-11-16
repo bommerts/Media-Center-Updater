@@ -21,6 +21,17 @@ typedef enum { INTERVAL_MINUTES, INTERVAL_HOURS, INTERVAL_DAYS, INTERVAL_UNIT_CO
 #define INTERVAL_MAX_MINUTES (30 * 24 * 60)
 #define ALL_DAYS 0x7F                           /* one bit per day of the week, bit 0 is Sunday */
 
+/* When something repeats: scheduled updates, and checks for a new version of this app. */
+typedef struct ScheduleTiming
+{
+    ScheduleMode mode;
+    int interval_minutes;
+    IntervalUnit interval_unit;
+    int daily_hour;
+    int daily_minute;
+    int daily_days;                     /* days of the week the daily time applies to, as ALL_DAYS bits */
+} ScheduleTiming;
+
 typedef struct ProgramSettings
 {
     ApplicationId id;
@@ -42,17 +53,13 @@ typedef struct AppSettings
     bool minimize_to_tray;
     bool start_minimized;
     bool schedule_enabled;
-    ScheduleMode schedule_mode;
-    int interval_minutes;
-    IntervalUnit interval_unit;
-    int daily_hour;
-    int daily_minute;
-    int daily_days;                     /* days of the week the daily time applies to, as ALL_DAYS bits */
+    ScheduleTiming schedule;
     DateTimeOffset last_scheduled_run;
     DateTimeOffset next_run;
     /* Updates to Media Center Updater itself. Only used by copies installed with the setup program. */
     bool app_update_check;
     bool app_update_install;
+    ScheduleTiming app_update_timing;   /* how often to check; the app also checks once each time it starts */
     DateTimeOffset last_app_update_check;
     ProgramSettings programs[APP_COUNT];
     int program_count;
@@ -100,8 +107,8 @@ ProgramSettings *settings_program(AppSettings *settings, ApplicationId id);   /*
 
 int interval_unit_minutes(IntervalUnit unit);                   /* minutes in one unit */
 int interval_from_unit(int count, IntervalUnit unit);           /* minutes, kept within the allowed range */
-/* Brings the schedule's values into range, and picks a smaller unit when the interval is not a whole number of its unit. */
-void settings_normalize_schedule(AppSettings *settings);
+/* Brings the values into range, and picks a smaller unit when the interval is not a whole number of its unit. */
+void timing_normalize(ScheduleTiming *timing);
 
 const wchar_t *app_name(ApplicationId id);
 const wchar_t *app_key(ApplicationId id);                  /* short name used in file names */
