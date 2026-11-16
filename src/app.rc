@@ -1,0 +1,38 @@
+// Resources compiled into MediaCenterUpdater.exe: the icon, the manifest and the version details.
+#include <winver.h>
+#include "version.h"
+
+1 ICON "Assets/AppIcon.ico"
+
+// Resource type 24 is a manifest; id 1 applies it to the program.
+#ifdef MCU_DEV
+1 24 "app.dev.manifest"
+#else
+1 24 "app.manifest"
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH, 0
+PRODUCTVERSION APP_VERSION_MAJOR, APP_VERSION_MINOR, APP_VERSION_PATCH, 0
+FILEFLAGSMASK VS_FFI_FILEFLAGSMASK
+FILEOS VOS_NT_WINDOWS32
+FILETYPE VFT_APP
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName", "bommerts"
+            VALUE "FileDescription", "Media Center Updater"
+            VALUE "FileVersion", APP_VERSION
+            VALUE "InternalName", "MediaCenterUpdater"
+            VALUE "OriginalFilename", "MediaCenterUpdater.exe"
+            VALUE "ProductName", "Media Center Updater"
+            VALUE "ProductVersion", APP_VERSION
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x0409, 0x04B0
+    END
+END

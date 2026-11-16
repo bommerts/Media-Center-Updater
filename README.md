@@ -2,7 +2,7 @@
 
 <h1 align="center">Media Center Updater</h1>
 
-<p align="center"><strong>Current version: 0.3.2</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
+<p align="center"><strong>Current version: 0.4.0</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
 
 A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
 
@@ -18,7 +18,7 @@ A Windows app that keeps the software on a home media server up to date. It chec
 - Minimizes to the notification area (system tray) so it can keep running in the background.
 - Light, dark, or system theme.
 
-It is a native Windows app built with WinUI 3 (Windows App SDK 2.4.0) and .NET 10. The published build is self-contained, so the target PC does not need .NET or the Windows App SDK installed.
+It is a native Windows app written in C against the Windows API. The whole app is one small 64-bit program (`MediaCenterUpdater.exe`), so the target PC needs nothing else installed: no .NET, no runtime libraries.
 
 ## Why these apps, and why Windows only?
 
@@ -129,17 +129,36 @@ Settings, recent activity, installer logs, and crash reports are stored in `%LOC
 
 ## Building
 
-You need the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (x64), or Visual Studio 2026. Then, in PowerShell in the repo folder:
+You need two things:
+
+- The Microsoft C compiler for x64. It comes with Visual Studio (2022 or later) or the free [Build Tools for Visual Studio](https://visualstudio.microsoft.com/downloads/); in either installer, select **Desktop development with C++**.
+- [CMake](https://cmake.org/download/) 3.21 or later.
+
+Then, in PowerShell in the repo folder:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Publish.ps1
 ```
 
-This runs the tests and publishes the self-contained x64 app to the `App` folder. To also build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and add `-Installer`; the installer lands in `Installer\Output`. The version number comes from `<Version>` in `MediaCenterUpdater.csproj`. `bin`, `obj`, `App` and `Installer\Output` are build output and aren't checked in.
+This builds the app, runs the tests, and puts `MediaCenterUpdater.exe` in the `App` folder. That one file is the whole app; you can copy it anywhere and run it. To also build the installer, install [Inno Setup 6](https://jrsoftware.org/isinfo.php) and add `-Installer`; the installer lands in `Installer\Output`. The version number comes from `src\version.h`. `build`, `App` and `Installer\Output` are build output and aren't checked in.
 
-If you run the `App` folder without the installer, copy the whole folder, not just the EXE: the app needs the DLLs and `resources.pri` beside it.
+The source is in `src`: the update logic (`providers.c`, `coordinator.c`, `discovery.c`, `selfupdate.c`), settings (`settings.c`), and the window (`mainwindow.c`, `ui.c`). `CMakeLists.txt` also opens directly in Visual Studio or any editor that understands CMake.
 
-The tests cover schedule recovery, daylight-saving time, non-overlapping runs, per-program switches, encrypted settings, failure isolation, URL credentials, version comparisons, and Radarr/Sonarr container detection. They use simulated providers and HTTP responses and never install real updates.
+### Development copy
+
+The normal build asks for administrator rights every time it starts and shares its settings with an installed copy. For working on the app, build a development copy instead:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Publish.ps1 -Dev
+```
+
+It lands in `build\dev`, starts without an administrator prompt, and can run next to an installed copy. Set the `MCU_DEV_DATA` environment variable to a folder before starting it to keep its settings and logs there instead of in `%LOCALAPPDATA%\MediaCenterUpdater`. Without administrator rights it can check for updates but not install them.
+
+### Tests
+
+`Tests\tests.c` covers schedule recovery, daylight-saving time, non-overlapping runs, per-program switches, encrypted settings, reading settings saved by earlier versions, failure isolation, URL credentials, version comparisons, and Radarr/Sonarr container detection. The tests use simulated providers and HTTP responses and never install real updates. `Publish.ps1` runs them on every build; add `-SkipTests` to skip them.
+
+The test program can also look at the PC it runs on without changing anything: `tests.exe --inspect-local` checks each app for updates, `--inspect-usage` asks whether each app is busy, `--inspect-pulsarr-key` looks for Pulsarr's API key (it never prints the key), and `--inspect-self-update 0.1.0` finds, downloads and verifies this app's latest release as if version 0.1.0 were installed, without running it.
 
 ## License
 
@@ -148,7 +167,6 @@ Released under the [MIT License](LICENSE).
 ## Sources
 
 - [Microsoft Windows interface guidance](https://learn.microsoft.com/en-us/windows/apps/get-started/)
-- [.NET support policy](https://dotnet.microsoft.com/en-us/platform/support/policy)
 - [Plex official release feed](https://plex.tv/api/downloads/5.json)
 - [SABnzbd Windows installer source](https://github.com/sabnzbd/sabnzbd/blob/5.1.3/builder/win/NSIS_Installer.nsi)
 - [Pulsarr Windows installer source](https://github.com/jamcalli/Pulsarr/blob/v0.19.2/scripts/installers/windows/pulsarr.iss)
