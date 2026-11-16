@@ -1817,7 +1817,8 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         free((void *)lparam);
         return 0;
     case WM_APP_TRAY:
-        if (LOWORD(lparam) == WM_LBUTTONDBLCLK || LOWORD(lparam) == NIN_KEYSELECT) show_window();
+        /* NIN_SELECT is a single left click; NIN_KEYSELECT is Enter or Space on the icon. */
+        if (LOWORD(lparam) == NIN_SELECT || LOWORD(lparam) == NIN_KEYSELECT) show_window();
         else if (LOWORD(lparam) == WM_CONTEXTMENU) show_tray_menu();
         return 0;
     case WM_APP_SHOW:

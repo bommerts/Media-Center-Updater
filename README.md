@@ -2,7 +2,7 @@
 
 <h1 align="center">Media Center Updater</h1>
 
-<p align="center"><strong>Current version: 0.4.0</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
+<p align="center"><strong>Current version: 0.4.1</strong> · <a href="https://github.com/bommerts/Media-Center-Updater/releases/latest">Download the installer</a></p>
 
 A Windows app that keeps the software on a home media server up to date. It checks for and installs updates for **Plex Media Server**, **SABnzbd**, **Radarr**, **Sonarr**, and **Pulsarr**, either when you click a button or on a schedule.
 
@@ -91,7 +91,7 @@ Uninstall **Media Center Updater** from Windows **Settings > Apps > Installed ap
 5. Optional: turn on **Scheduled updates** and pick an interval (1 to 168 hours) or a daily time. Scheduled runs install updates for monitored programs that have Automatic install turned on. The schedule is off by default.
 6. **Settings > Wait while apps are in use** is on for every app, so an update never interrupts an app that is busy. An install for a checked app is skipped while it is in use and tried again about 30 minutes later. If the app cannot be checked, the update also waits and the app shows why. Uncheck an app to update it even while it is busy. Pulsarr requires sign-in by default, so this check needs a Pulsarr API key. The updater reads one from Pulsarr's database on this PC by itself. A **Pulsarr API key** box with a **Find key** button appears only when a key is needed. If Pulsarr has no key yet, create one in Pulsarr under **Utilities > API Keys**, then click **Find key**.
 
-Closing or minimizing the window hides it in the notification area by default. Double-click the tray icon to reopen it; its menu offers Open, Check for updates, and Exit. Settings let you turn this off, start minimized, and choose a Light, Dark, or system theme. The updater only runs while a Windows user is signed in and the PC is awake. A missed scheduled run happens once when the app next resumes or starts.
+Closing or minimizing the window hides it in the notification area by default. Click the tray icon to reopen it; its menu offers Open, Check for updates, and Exit. Settings let you turn this off, start minimized, and choose a Light, Dark, or system theme. The updater only runs while a Windows user is signed in and the PC is awake. A missed scheduled run happens once when the app next resumes or starts.
 
 ## Supported update methods
 
